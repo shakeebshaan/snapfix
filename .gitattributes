@@ -1,0 +1,6 @@
+# Scripts run via npx/node on any OS — CRLF in a shebang breaks them on macOS/Linux.
+# Force LF on everything text; let git auto-detect binary.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
