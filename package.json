@@ -1,0 +1,42 @@
+{
+  "name": "snapfix",
+  "version": "0.1.0",
+  "description": "Screenshot-to-AI-fix QA board for any project. GitHub is the only backend: a public Pages board for issue metadata, a private repo for screenshots, and a Claude Code skill that fixes your real app code and posts before/after proof. Set it all up with one command.",
+  "type": "module",
+  "bin": {
+    "snapfix": "bin/create.mjs"
+  },
+  "scripts": {
+    "init": "node bin/create.mjs"
+  },
+  "files": [
+    "bin",
+    "template",
+    "skill"
+  ],
+  "keywords": [
+    "qa",
+    "screenshot",
+    "bug-tracker",
+    "issue-tracker",
+    "github-pages",
+    "claude",
+    "claude-code",
+    "ai-fix",
+    "playwright",
+    "no-server"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT",
+  "author": "shakeebshaan",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shakeebshaan/snapfix.git"
+  },
+  "homepage": "https://github.com/shakeebshaan/snapfix#readme",
+  "bugs": {
+    "url": "https://github.com/shakeebshaan/snapfix/issues"
+  }
+}

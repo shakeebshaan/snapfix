@@ -1,0 +1,1121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#faf8f4" />
+<title>QA Board</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='42' fill='%2326bd8c'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --accent: hsl(166 70% 47%);
+    --accent-soft: hsl(166 60% 94%);
+    --accent-ink: hsl(166 80% 24%);
+    --amber: hsl(36 90% 50%);
+    --amber-soft: hsl(36 90% 94%);
+    --amber-ink: hsl(30 80% 30%);
+    --bg: hsl(40 30% 97%);
+    --card: #ffffff;
+    --ink: hsl(200 15% 15%);
+    --muted: hsl(200 10% 45%);
+    --line: hsl(40 15% 90%);
+    --danger: hsl(0 70% 50%);
+    --shadow: 0 1px 2px rgb(20 24 28 / .04), 0 8px 24px rgb(20 24 28 / .06);
+    --radius: 1rem;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    font-family: "DM Sans", system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.45;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+
+  /* ── Header ─────────────────────────────────────────── */
+  header {
+    position: sticky; top: 0; z-index: 20;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+    padding-top: env(safe-area-inset-top);
+  }
+  .bar { display: flex; align-items: center; gap: 10px; padding: 14px 0; }
+  .logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; letter-spacing: -.01em; }
+  .logo .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+  .chips { display: flex; gap: 6px; margin-left: auto; align-items: center; }
+  .chip {
+    font-size: 12.5px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
+    border: 1px solid transparent; white-space: nowrap;
+  }
+  .chip.open  { background: var(--amber-soft); color: var(--amber-ink); }
+  .chip.fixed { background: var(--accent-soft); color: var(--accent-ink); }
+  .chip.conn  {
+    background: var(--card); border-color: var(--line); color: var(--muted);
+    cursor: pointer; display: flex; align-items: center; gap: 6px;
+    min-height: 28px;
+  }
+  .chip.conn .st { width: 7px; height: 7px; border-radius: 50%; background: hsl(0 0% 75%); }
+  .chip.conn.on .st { background: var(--accent); }
+  .iconbtn {
+    border: 1px solid var(--line); background: var(--card); color: var(--muted);
+    border-radius: 10px; width: 34px; height: 34px; display: grid; place-items: center;
+    cursor: pointer; font-size: 15px;
+  }
+  .iconbtn:active { transform: scale(.96); }
+
+  /* ── Banners / toast ────────────────────────────────── */
+  .banner {
+    margin: 14px 0 0; padding: 12px 14px; border-radius: 12px; font-size: 13.5px;
+    display: none; align-items: center; gap: 10px; justify-content: space-between;
+  }
+  .banner.show { display: flex; }
+  .banner.error { background: hsl(0 80% 96%); color: hsl(0 60% 35%); border: 1px solid hsl(0 60% 88%); }
+  .banner button {
+    border: 0; background: transparent; color: inherit; font: inherit; font-weight: 700;
+    cursor: pointer; padding: 6px 8px; min-height: 32px;
+  }
+  #toast {
+    position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom));
+    transform: translateX(-50%) translateY(20px);
+    background: var(--ink); color: #fff; font-size: 13.5px; font-weight: 600;
+    padding: 10px 18px; border-radius: 999px; opacity: 0; pointer-events: none;
+    transition: opacity .25s ease, transform .25s cubic-bezier(.16,1,.3,1);
+    max-width: 86vw; text-align: center; z-index: 60;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── Issue cards ────────────────────────────────────── */
+  main { padding-top: 18px; }
+  .empty {
+    text-align: center; color: var(--muted); padding: 56px 20px; font-size: 14.5px;
+  }
+  .empty b { color: var(--ink); display: block; font-size: 16px; margin-bottom: 6px; }
+  .card {
+    background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+    margin-bottom: 18px; overflow: hidden; border: 1px solid var(--line);
+  }
+  .card-head {
+    display: flex; align-items: center; gap: 8px; padding: 12px 16px 0; flex-wrap: wrap;
+  }
+  .badge {
+    font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    padding: 3px 9px; border-radius: 999px;
+  }
+  .badge.open  { background: var(--amber-soft); color: var(--amber-ink); }
+  .badge.fixed { background: var(--accent-soft); color: var(--accent-ink); }
+  .badge.reopened { background: hsl(0 80% 95%); color: hsl(0 55% 40%); }
+  .badge.archived { background: hsl(40 15% 92%); color: var(--muted); }
+  .badge.review { background: hsl(263 60% 95%); color: hsl(263 50% 42%); }
+  /* "Needs your review" banner on a flagged card */
+  .review-note {
+    margin: 10px 0 0; padding: 10px 12px; border-radius: 10px;
+    background: hsl(263 60% 96%); border: 1px solid hsl(263 50% 88%);
+    color: hsl(263 40% 32%); font-size: 13px; line-height: 1.45;
+  }
+  .review-note b { color: hsl(263 50% 38%); }
+  /* Tag filter bar + per-card tag chips */
+  #tagbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+  #tagbar:empty { display: none; }
+  .tagchip {
+    font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+    border: 1px solid var(--line); background: transparent; color: var(--muted);
+    border-radius: 999px; padding: 4px 11px; min-height: 30px;
+  }
+  .tagchip.active { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; }
+  .card-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+  .card-tag { font-size: 11px; font-weight: 600; color: var(--muted); background: hsl(40 15% 94%); border-radius: 999px; padding: 2px 8px; }
+  .archbtn {
+    border: 1px solid var(--line); background: transparent; color: var(--muted);
+    font: inherit; font-size: 12px; font-weight: 600; border-radius: 999px;
+    padding: 3px 10px; min-height: 26px; cursor: pointer;
+  }
+  .archbtn:active { transform: scale(.96); }
+  .archbtn[disabled] { opacity: .5; cursor: wait; }
+  /* User verdict buttons on an in-review card */
+  .verdict { display: flex; gap: 8px; margin-top: 10px; }
+  .vbtn {
+    flex: 1; font: inherit; font-size: 13px; font-weight: 700; border-radius: 10px;
+    padding: 8px 10px; min-height: 40px; cursor: pointer; border: 1px solid transparent;
+  }
+  .vbtn:active { transform: scale(.98); }
+  .vbtn[disabled] { opacity: .5; cursor: wait; }
+  .vbtn.resolve { background: var(--accent-soft); color: var(--accent-ink); }
+  .vbtn.reject  { background: var(--amber-soft); color: var(--amber-ink); }
+  .vbtn.respond { background: hsl(263 60% 95%); color: hsl(263 50% 42%); }
+  /* Previous-fix dropdown (accumulates across not-fixed → re-fix cycles) */
+  details.prevfix { margin-top: 12px; border-top: 1px dashed var(--line); padding-top: 8px; }
+  details.prevfix > summary {
+    cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted);
+    list-style: none; padding: 4px 0; min-height: 30px; display: flex; align-items: center; gap: 6px;
+  }
+  details.prevfix > summary::-webkit-details-marker { display: none; }
+  details.prevfix > summary::before { content: "▸"; transition: transform .15s; }
+  details.prevfix[open] > summary::before { transform: rotate(90deg); }
+  .pf-sep { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+  .pf-when { font-size: 11px; color: var(--muted); font-weight: 500; }
+  .linkbtn {
+    display: block; margin: 4px auto 0; border: 0; background: transparent;
+    color: var(--muted); font: inherit; font-size: 13.5px; font-weight: 600;
+    cursor: pointer; padding: 10px 16px; min-height: 44px;
+  }
+  .linkbtn:active { opacity: .6; }
+  #arch h2 {
+    font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); margin: 18px 2px 12px;
+  }
+  #arch .card { opacity: .92; }
+  .meta { font-size: 12.5px; color: var(--muted); }
+  .route-pill {
+    font-size: 12px; font-weight: 600; color: var(--muted);
+    background: var(--bg); border: 1px solid var(--line);
+    padding: 2px 8px; border-radius: 999px; font-family: ui-monospace, monospace;
+  }
+  .iid { margin-left: auto; font-size: 11px; color: hsl(200 10% 70%); font-family: ui-monospace, monospace; }
+  .sides { display: grid; grid-template-columns: 1fr; }
+  @media (min-width: 720px) {
+    .sides { grid-template-columns: 1fr 1fr; }
+    .side + .side { border-left: 1px solid var(--line); border-top: 0 !important; }
+  }
+  .side { padding: 14px 16px 18px; }
+  .side + .side { border-top: 1px solid var(--line); }
+  .side h3 {
+    margin: 0 0 10px; font-size: 12px; font-weight: 700; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--muted);
+  }
+  .side h3 .when { float: right; font-weight: 500; letter-spacing: 0; text-transform: none; }
+  .shot {
+    width: 100%; height: clamp(260px, 58vw, 400px); border-radius: 12px;
+    background: hsl(40 20% 94%); border: 1px solid var(--line);
+    display: grid; place-items: center; overflow: hidden; cursor: zoom-in; padding: 0;
+  }
+  .shot img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .desc { margin: 10px 2px 0; font-size: 14.5px; white-space: pre-wrap; word-break: break-word; }
+  .await {
+    height: clamp(260px, 58vw, 400px); border: 1.5px dashed var(--line); border-radius: 12px;
+    display: grid; place-items: center; color: var(--muted); font-size: 13.5px;
+    background: hsl(40 25% 97.5%); text-align: center; padding: 16px;
+  }
+  .await .w { font-size: 26px; display: block; margin-bottom: 8px; opacity: .55; }
+  .reopen-note { margin: 0 0 10px; font-size: 13px; color: hsl(0 55% 40%); background: hsl(0 80% 96%); border-radius: 10px; padding: 8px 12px; }
+
+  /* ── Add form ───────────────────────────────────────── */
+  #add {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 18px 16px; margin: 26px 0 10px;
+  }
+  #add h2 { margin: 0 0 14px; font-size: 16px; letter-spacing: -.01em; }
+  .pick {
+    display: block; border: 1.5px dashed hsl(166 35% 75%); border-radius: 12px;
+    background: var(--accent-soft); color: var(--accent-ink);
+    text-align: center; padding: 26px 16px; cursor: pointer; font-weight: 600; font-size: 14px;
+  }
+  .pick.add-more { padding: 12px 16px; font-size: 13px; }
+  .pick .hint { display: block; font-size: 12px; color: var(--muted); font-weight: 500; margin-top: 8px; }
+  #pick-thumbs { margin-bottom: 8px; }
+  .thumb-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .thumb { position: relative; }
+  .thumb img { width: 76px; height: 76px; object-fit: cover; border-radius: 8px; display: block; border: 1px solid var(--line); }
+  .rm-img {
+    position: absolute; top: -7px; right: -7px;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: hsl(0 70% 50%); color: #fff; border: 2px solid var(--card);
+    font-size: 10px; font-weight: 800; line-height: 1; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; padding: 0;
+  }
+  .rm-img:hover { background: hsl(0 80% 40%); }
+  .thumbs-footer { display: flex; justify-content: flex-end; margin-top: 6px; }
+  .clear-all-btn {
+    border: 0; background: transparent; color: var(--danger);
+    font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; padding: 4px 2px; min-height: 32px;
+  }
+  .shots-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .shots-grid .shot { height: clamp(120px, 28vw, 200px); }
+  /* -- Private images ----------------------------------------- */
+  img[data-priv-path] { opacity: 0; transition: opacity .25s; }
+  img[data-priv-path].priv-loaded { opacity: 1; }
+  .shot.priv-lock {
+    display: grid; place-items: center; color: var(--muted);
+    font-size: 12.5px; font-weight: 600; gap: 6px; cursor: default; text-align: center;
+  }
+  .shot.priv-lock::before { content: "🔒"; font-size: 28px; display: block; opacity: .45; margin-bottom: 4px; }
+  .field { margin-top: 12px; }
+  .field label { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+  input[type="text"], textarea {
+    width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+    font: inherit; font-size: 14.5px; padding: 11px 12px; color: var(--ink); outline: none;
+  }
+  input[type="text"]:focus, textarea:focus { border-color: var(--accent); background: #fff; }
+  textarea { min-height: 96px; resize: vertical; }
+  .submit {
+    margin-top: 14px; width: 100%; border: 0; border-radius: 12px; min-height: 48px;
+    background: var(--accent); color: #fff; font: inherit; font-size: 15px; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .submit:disabled { opacity: .45; cursor: not-allowed; }
+  .submit:not(:disabled):active { transform: scale(.99); }
+  .spin {
+    width: 16px; height: 16px; border: 2.5px solid rgb(255 255 255 / .35); border-top-color: #fff;
+    border-radius: 50%; animation: rot .7s linear infinite; display: none;
+  }
+  .submit.busy .spin { display: block; }
+  @keyframes rot { to { transform: rotate(360deg); } }
+
+  /* ── Settings sheet ─────────────────────────────────── */
+  dialog {
+    border: 0; border-radius: 18px 18px 0 0; padding: 0; width: 100%; max-width: 560px;
+    margin: auto auto 0; background: var(--card); color: var(--ink);
+  }
+  @media (min-width: 720px) { dialog { border-radius: 18px; margin: auto; } }
+  dialog::backdrop { background: rgb(15 18 20 / .45); }
+  .sheet { padding: 20px 18px calc(20px + env(safe-area-inset-bottom)); }
+  .sheet h2 { margin: 0 0 4px; font-size: 17px; }
+  .sheet p { margin: 0 0 14px; font-size: 13px; color: var(--muted); }
+  .sheet .row { display: flex; gap: 8px; margin-top: 14px; }
+  .btn {
+    flex: 1; border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+    border-radius: 11px; min-height: 44px; font: inherit; font-weight: 600; font-size: 14px; cursor: pointer;
+  }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.danger { color: var(--danger); }
+  .tok-state { margin-top: 12px; font-size: 13px; min-height: 18px; color: var(--muted); }
+  .tok-state.ok { color: var(--accent-ink); font-weight: 600; }
+  .tok-state.bad { color: var(--danger); font-weight: 600; }
+
+  /* ── Lightbox ───────────────────────────────────────── */
+  #lightbox { background: transparent; max-width: none; width: 100vw; height: 100dvh; margin: 0; border-radius: 0; }
+  #lightbox::backdrop { background: rgb(10 12 14 / .92); }
+  #lightbox img { width: 100vw; height: 100dvh; object-fit: contain; cursor: zoom-out; }
+
+  /* ── Skeletons ──────────────────────────────────────── */
+  .skel { border-radius: var(--radius); border: 1px solid var(--line); background: var(--card); margin-bottom: 18px; padding: 16px; }
+  .sh { background: linear-gradient(90deg, hsl(40 20% 94%), hsl(40 25% 90%), hsl(40 20% 94%)); background-size: 200% 100%; animation: shm 1.2s linear infinite; border-radius: 10px; }
+  @keyframes shm { to { background-position: -200% 0; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap bar">
+    <div class="logo"><span class="dot"></span><span id="logo-label">QA Board</span></div>
+    <div class="chips">
+      <span class="chip open" id="chip-open">– open</span>
+      <span class="chip fixed" id="chip-fixed">– fixed</span>
+      <button class="chip conn" id="chip-conn" type="button"><span class="st"></span><span id="conn-label">connect</span></button>
+      <button class="iconbtn" id="btn-qa-report" type="button" title="Open QA Report" aria-label="Open local QA report">⊞</button>
+      <button class="iconbtn" id="btn-refresh" type="button" title="Refresh" aria-label="Refresh">⟳</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="banner error" id="banner">
+    <span id="banner-msg"></span>
+    <button type="button" id="banner-retry">Retry</button>
+  </div>
+
+  <!-- Add-new-issue form pinned to the top so filing from a phone doesn't
+       require scrolling past the whole issue list (owner request 2026-06-13). -->
+  <section id="add">
+    <h2>Add new issue</h2>
+    <form id="form">
+      <div id="pick-thumbs" hidden>
+        <div class="thumb-grid" id="thumb-grid"></div>
+        <div class="thumbs-footer"><button type="button" class="clear-all-btn" id="clear-all">Remove all</button></div>
+      </div>
+      <label class="pick" id="pick">
+        <input type="file" id="file" accept="image/*" multiple hidden />
+        <span id="pick-inner">📷 &nbsp;Upload screenshots<span class="hint">tap to pick · or paste (Ctrl+V)</span></span>
+      </label>
+      <div class="field">
+        <label for="route">Screen / route <span style="font-weight:400">(optional — e.g. /nutrition)</span></label>
+        <input type="text" id="route" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="/dashboard" />
+      </div>
+      <div class="field">
+        <label for="desc">What's wrong?</label>
+        <textarea id="desc" placeholder="Describe the issue…" required></textarea>
+      </div>
+      <button class="submit" id="submit" type="submit" disabled>
+        <span class="spin"></span><span id="submit-label">Submit issue</span>
+      </button>
+    </form>
+  </section>
+
+  <div id="tagbar" role="group" aria-label="Filter by tag"></div>
+  <main id="list" aria-live="polite"></main>
+
+  <button class="linkbtn" id="arch-toggle" type="button">View resolved</button>
+  <section id="arch" hidden>
+    <h2>Resolved</h2>
+    <div id="arch-list"></div>
+  </section>
+</div>
+
+<dialog id="settings">
+  <div class="sheet">
+    <h2>GitHub connection</h2>
+    <p>Paste a token with <b>Contents: read &amp; write</b> on <b id="tok-repo-label">your QA repo</b>. Stored only in this browser.</p>
+    <input type="text" id="token" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="github_pat_… / gho_…" />
+    <div class="tok-state" id="tok-state"></div>
+    <div class="row">
+      <button class="btn danger" type="button" id="tok-forget">Forget</button>
+      <button class="btn" type="button" id="tok-close">Close</button>
+      <button class="btn primary" type="button" id="tok-save">Save &amp; test</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="qa-report-dialog">
+  <div class="sheet">
+    <h2>Local QA Report</h2>
+    <p>Paste the <code>file://</code> URL to your local <code>.qa-report/index.html</code>. Stored per browser.</p>
+    <input type="text" id="qa-report-url" autocomplete="off" spellcheck="false" placeholder="file:///path/to/your-app/.qa-report/index.html" />
+    <div class="row" style="margin-top:14px">
+      <button class="btn danger" type="button" id="qr-forget">Forget</button>
+      <button class="btn" type="button" id="qr-close">Close</button>
+      <button class="btn primary" type="button" id="qr-open">Save &amp; open</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="lightbox"><img id="lightbox-img" alt="screenshot" /></dialog>
+<div id="toast" role="status"></div>
+
+<!-- Optional: written by `snapfix init` at setup. Sets window.QA_CONFIG =
+     { owner, repo, privateRepo, branch, title }. Safe to omit — the board
+     auto-detects owner/repo from the GitHub Pages URL when it's absent. -->
+<script src="config.js"></script>
+<script>
+"use strict";
+/* ── config resolution ─────────────────────────────────────
+   Priority: window.QA_CONFIG (from config.js) → auto-detect from the
+   GitHub Pages URL (https://OWNER.github.io/REPO/) → safe defaults.
+   The private image store always lives under the SAME account (PRIV_OWNER
+   === OWNER) and defaults to REPO + "-private". */
+function resolveConfig() {
+  const cfg = (typeof window !== "undefined" && window.QA_CONFIG) || {};
+  let owner = cfg.owner, repo = cfg.repo;
+  if (!owner || !repo) {
+    // Auto-detect: OWNER.github.io / REPO / ...
+    const host = location.hostname || "";
+    const m = host.match(/^([^.]+)\.github\.io$/i);
+    if (m) {
+      if (!owner) owner = m[1];
+      if (!repo) {
+        const seg = location.pathname.split("/").filter(Boolean)[0];
+        if (seg) {
+          repo = seg;
+        } else {
+          // Root pages site (https://owner.github.io/ with no project path
+          // segment) and config.js didn't supply a repo — there is nothing to
+          // auto-detect the repo from. Warn loudly and leave `repo` undefined
+          // rather than silently defaulting to a placeholder that would query a
+          // nonexistent repo. The setup CLI normally writes config.js so this
+          // branch only hits a misconfigured account-root deployment.
+          console.warn(
+            "[QA Board] Cannot auto-detect the repo: deployed at an account-root " +
+            "GitHub Pages site (https://" + owner + ".github.io/) with no project " +
+            "path segment. Add a config.js that sets " +
+            "window.QA_CONFIG = { owner, repo } to point the board at its repo."
+          );
+        }
+      }
+    }
+  }
+  owner = owner || "OWNER";
+  // NOTE: no placeholder fallback for `repo` — if it's still empty here
+  // (account-root deployment without config.js, warned above) leave it empty so
+  // failures are loud rather than pointed at a nonexistent default repo.
+  return {
+    OWNER: owner,
+    REPO: repo,
+    BRANCH: cfg.branch || "main",
+    PRIV_OWNER: owner,                              // same account owns both repos
+    PRIV_REPO: cfg.privateRepo || (repo + "-private"),
+    PRIV_BRANCH: cfg.branch || "main",
+    TITLE: cfg.title || "QA Board",
+  };
+}
+const QA = resolveConfig();
+const OWNER = QA.OWNER, REPO = QA.REPO, BRANCH = QA.BRANCH;
+const API = `https://api.github.com/repos/${OWNER}/${REPO}`;
+const PRIV_OWNER = QA.PRIV_OWNER, PRIV_REPO = QA.PRIV_REPO, PRIV_BRANCH = QA.PRIV_BRANCH;
+const PRIV_API = `https://api.github.com/repos/${PRIV_OWNER}/${PRIV_REPO}`;
+const privImgCache = new Map(); // path -> data URI | null
+const $ = (id) => document.getElementById(id);
+
+let db = null;          // parsed issues.json
+let token = localStorage.getItem("qaToken") || "";
+let qaReportUrl = localStorage.getItem("qaReportUrl") || "";
+let lastLoad = 0;
+
+/* ── utils ─────────────────────────────────────────────── */
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function b64encodeUtf8(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+function b64decodeUtf8(b64) {
+  const bin = atob(b64.replace(/\s/g, ""));
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+const fmtDate = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso), now = Date.now(), diff = now - d.getTime();
+  if (diff < 60e3) return "just now";
+  if (diff < 3600e3) return Math.floor(diff / 60e3) + "m ago";
+  if (diff < 86400e3) return Math.floor(diff / 3600e3) + "h ago";
+  if (diff < 7 * 86400e3) return Math.floor(diff / 86400e3) + "d ago";
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short" });
+};
+const rawUrl = (path, commit) =>
+  `https://raw.githubusercontent.com/${OWNER}/${REPO}/${commit || BRANCH}/${path}`;
+async function fetchPrivImage(path) {
+  if (privImgCache.has(path)) return privImgCache.get(path);
+  if (!token) { privImgCache.set(path, null); return null; }
+  try {
+    const r = await fetch(`${PRIV_API}/contents/${path}?ref=${PRIV_BRANCH}`, {
+      headers: headers(), cache: "no-store",
+    });
+    if (!r.ok) { privImgCache.set(path, null); return null; }
+    const j = await r.json();
+    const uri = `data:image/jpeg;base64,${j.content.replace(/\s/g, "")}`;
+    privImgCache.set(path, uri);
+    return uri;
+  } catch {
+    privImgCache.set(path, null);
+    return null;
+  }
+}
+async function resolvePrivImages() {
+  const imgs = document.querySelectorAll("img[data-priv-path]:not(.priv-loaded)");
+  for (const img of imgs) {
+    img.classList.add("priv-loaded"); // mark immediately to prevent double-fetch
+    const uri = await fetchPrivImage(img.dataset.privPath);
+    if (uri) {
+      img.src = uri;
+      img.style.opacity = "1";
+      const btn = img.closest(".shot");
+      if (btn) btn.dataset.full = uri; // lightbox gets the data URI
+    } else {
+      const btn = img.closest(".shot");
+      if (btn) { btn.classList.add("priv-lock"); btn.removeAttribute("data-full"); }
+    }
+  }
+}
+function toast(msg, ms = 2600) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toast._h);
+  toast._h = setTimeout(() => t.classList.remove("show"), ms);
+}
+function headers(extra) {
+  const h = { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", ...extra };
+  if (token) h.Authorization = "Bearer " + token;
+  return h;
+}
+
+/* ── data load ─────────────────────────────────────────── */
+async function loadJson(path) {
+  const r = await fetch(`${API}/contents/${path}?ref=${BRANCH}&t=${Date.now()}`, {
+    headers: headers(), cache: "no-store",
+  });
+  if (r.status === 404) return { data: null, sha: null, missing: true };
+  if (r.status === 403 && r.headers.get("x-ratelimit-remaining") === "0") {
+    throw new Error(token ? "GitHub rate limit hit — try again later." : "Rate limit hit — add a token in settings to raise it.");
+  }
+  if (r.status === 401) { connState(false); throw new Error("Token rejected (401) — update it in settings."); }
+  if (!r.ok) throw new Error("GitHub API error " + r.status);
+  const j = await r.json();
+  return { data: JSON.parse(b64decodeUtf8(j.content)), sha: j.sha, missing: false };
+}
+async function loadDb() {
+  const { data, sha, missing } = await loadJson("data/issues.json");
+  if (missing) throw new Error("issues.json missing from the repo.");
+  return { db: data, sha };
+}
+async function refresh(silent) {
+  if (!silent) renderSkeleton();
+  $("banner").classList.remove("show");
+  try {
+    const res = await loadDb();
+    db = res.db;
+    lastLoad = Date.now();
+    render();
+  } catch (e) {
+    if (db) { toast(e.message); return; }
+    $("list").innerHTML = "";
+    $("banner-msg").textContent = e.message;
+    $("banner").classList.add("show");
+  }
+}
+
+/* ── render ────────────────────────────────────────────── */
+function renderSkeleton() {
+  $("list").innerHTML = Array.from({ length: 2 }, () =>
+    `<div class="skel"><div class="sh" style="height:18px;width:40%"></div><div class="sh" style="height:280px;margin-top:12px"></div></div>`
+  ).join("");
+}
+function shotHtml(path, commit, alt, isPrivate) {
+  if (isPrivate) {
+    return `<button class="shot" type="button" data-full="" aria-label="Enlarge ${esc(alt)}"><img data-priv-path="${esc(path)}" alt="${esc(alt)}" src="" /></button>`;
+  }
+  const u = rawUrl(path, commit);
+  return `<button class="shot" type="button" data-full="${esc(u)}" aria-label="Enlarge ${esc(alt)}"><img loading="lazy" src="${esc(u)}" alt="${esc(alt)}" /></button>`;
+}
+function shotsHtml(paths, commits, altBase, isPrivate) {
+  if (!paths || paths.length === 0) return "";
+  if (paths.length === 1) return shotHtml(paths[0], commits?.[0], altBase, isPrivate);
+  return `<div class="shots-grid">${paths.map((p, i) => shotHtml(p, commits?.[i] ?? commits?.[0], `${altBase} ${i + 1}`, isPrivate)).join("")}</div>`;
+}
+let activeTag = null;  // current tag filter (null = all)
+
+/* Tags for an issue: explicit `tags` if set, else keyword-derived from the
+   route + description so the filter is useful even before issues are tagged. */
+const TAG_RULES = [
+  [/water|hydrat/, "water"],
+  [/meal|diet|nutrition|recipe|ingredient|food/, "diet"],
+  [/workout|exercise|cardio|activity|steps|training/, "workout"],
+  [/builder|build your|plan-builder|progression/, "builder"],
+  [/coach|nisha|rohan|atlas|character/, "coach"],
+  [/dashboard|home screen/, "dashboard"],
+  [/onboard|sign ?up|first day|welcome/, "onboarding"],
+  [/profile|settings/, "profile"],
+  [/social|friend|partner|leaderboard/, "social"],
+  [/image|photo|picture|icon/, "image"],
+  [/text|label|copy|wording|color|colour|button/, "ui"],
+];
+function tagsFor(it) {
+  if (Array.isArray(it.tags) && it.tags.length) return it.tags.map((t) => String(t).toLowerCase());
+  const hay = `${it.route || ""} ${it.description || ""}`.toLowerCase();
+  const out = [];
+  for (const [re, tag] of TAG_RULES) if (re.test(hay) && !out.includes(tag)) out.push(tag);
+  return out;
+}
+
+function cardHtml(it, archived) {
+  const reopened = it.status === "open" && (it.history || []).some((h) => h.event === "reopened");
+  const lastReopen = reopened ? it.history.filter((h) => h.event === "reopened").slice(-1)[0] : null;
+  const needsReview = it.status === "open" && it.needsReview;
+  // Lifecycle labels (QA flow 2026-06-13): Submitted → In review → Resolved,
+  // with Re-fix when the user sends a fix back as "not fixed".
+  const badge = archived
+    ? `<span class="badge fixed">Resolved</span>`
+    : it.status === "fixed"
+      ? `<span class="badge review">In review</span>`
+      : needsReview ? `<span class="badge review">User review</span>`
+        : reopened ? `<span class="badge reopened">Re-fix</span>` : `<span class="badge open">Submitted</span>`;
+
+  // Previous fixes accumulate as the user rejects ("not fixed") and Claude
+  // re-fixes — surfaced as a collapsed dropdown so the current fix stays primary.
+  const prevFixes = (it.history || []).filter((h) => h.event === "reopened" && h.previousFix).map((h) => h.previousFix);
+  const prevHtml = prevFixes.length
+    ? `<details class="prevfix"><summary>Previous fix${prevFixes.length > 1 ? "es" : ""} (${prevFixes.length})</summary>${
+        prevFixes.map((pf, i) => { const pp = pf.imagePaths || [pf.imagePath]; return `${i ? '<hr class="pf-sep">' : ""}${pf.fixedAt ? `<div class="pf-when">${fmtDate(pf.fixedAt)}</div>` : ""}${shotsHtml(pp, pp.map(() => pf.imageCommit), "previous fix", pf.imagePrivate)}<p class="desc">${esc(pf.description || "")}</p>`; }).join("")
+      }</details>`
+    : "";
+
+  const fixPaths = it.fix ? (it.fix.imagePaths || [it.fix.imagePath]) : [];
+  const right = it.status === "fixed" && it.fix
+    ? `${shotsHtml(fixPaths, fixPaths.map(() => it.fix.imageCommit), "fix screenshot", it.fix?.imagePrivate)}
+       <p class="desc">${esc(it.fix.description)}</p>
+       ${prevHtml}
+       ${archived ? "" : `<div class="verdict">
+         <button class="vbtn resolve" type="button" data-resolve="${esc(it.id)}">✓ Resolve</button>
+         <button class="vbtn reject" type="button" data-notfixed="${esc(it.id)}">✗ Not fixed</button>
+       </div>`}`
+    : needsReview
+      ? `<p class="review-note"><b>Needs your review.</b> ${esc(it.reviewReason || "Blocked — see notes.")}</p>
+         ${it.reviewReply ? `<p class="reopen-note">↳ you: ${esc(it.reviewReply)}</p>` : ""}
+         ${prevHtml}
+         ${archived ? "" : `<div class="verdict">
+           <button class="vbtn respond" type="button" data-respond="${esc(it.id)}">↩ Respond</button>
+           <button class="vbtn resolve" type="button" data-resolve="${esc(it.id)}">✓ Resolve</button>
+         </div>`}`
+      : `${lastReopen?.note ? `<p class="reopen-note">↻ ${esc(lastReopen.note)}</p>` : ""}
+       <div class="await"><span><span class="w">🔧</span>${reopened ? "Awaiting re-fix" : "Awaiting fix"}<br><span style="font-size:12px;opacity:.7">Claude will post the ${reopened ? "re-" : ""}fixed screenshot here</span></span></div>
+       ${prevHtml}`;
+  const tags = tagsFor(it);
+  const tagsHtml = tags.length
+    ? `<div class="card-tags">${tags.map((t) => `<span class="card-tag">${esc(t)}</span>`).join("")}</div>` : "";
+  return `<article class="card" id="${esc(it.id)}">
+    <div class="card-head">
+      ${badge}
+      ${it.route ? `<span class="route-pill">${esc(it.route)}</span>` : ""}
+      <span class="meta">${archived ? "resolved " + fmtDate(it.archivedAt) : fmtDate(it.createdAt)}</span>
+      <span class="iid">${esc(it.id)}</span>
+    </div>
+    <div class="sides">
+      <div class="side">
+        <h3>Issue</h3>
+        ${shotsHtml(it.imagePaths || [it.imagePath], it.imageCommits || [it.imageCommit], "issue screenshot", it.imagePrivate)}
+        <p class="desc">${esc(it.description)}</p>
+        ${tagsHtml}
+      </div>
+      <div class="side">
+        <h3>${needsReview ? "Status" : it.status === "fixed" ? "Proposed fix" : "Fix"} ${it.fix?.fixedAt ? `<span class="when">${fmtDate(it.fix.fixedAt)}</span>` : ""}</h3>
+        ${right}
+      </div>
+    </div>
+  </article>`;
+}
+function renderTagbar(issues) {
+  const counts = new Map();
+  for (const it of issues) for (const t of tagsFor(it)) counts.set(t, (counts.get(t) || 0) + 1);
+  const tags = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  if (!tags.length) { $("tagbar").innerHTML = ""; return; }
+  const chip = (label, tag, active) =>
+    `<button class="tagchip${active ? " active" : ""}" type="button" data-tag="${esc(tag)}">${esc(label)}</button>`;
+  $("tagbar").innerHTML =
+    chip(`All (${issues.length})`, "", activeTag === null) +
+    tags.map(([t, n]) => chip(`${t} (${n})`, t, activeTag === t)).join("");
+}
+function render() {
+  const all = db?.issues || [];
+  // Order: needs-review first, then other open, then fixed; newest within each.
+  const rank = (i) => (i.status === "open" && i.needsReview ? 0 : i.status === "open" ? 1 : 2);
+  const sorted = [...all].sort(
+    (a, b) => rank(a) - rank(b) || (b.createdAt || "").localeCompare(a.createdAt || ""),
+  );
+  const open = all.filter((i) => i.status === "open").length;
+  const review = all.filter((i) => i.status === "open" && i.needsReview).length;
+  const inReview = all.length - open;
+  $("chip-open").textContent = review ? `${open} to fix · ${review} review` : `${open} to fix`;
+  $("chip-fixed").textContent = `${inReview} in review`;
+  renderTagbar(sorted);
+  const visible = activeTag ? sorted.filter((it) => tagsFor(it).includes(activeTag)) : sorted;
+  $("list").innerHTML = visible.length
+    ? visible.map((it) => cardHtml(it)).join("")
+    : all.length
+      ? `<div class="empty"><b>No issues with "${esc(activeTag)}"</b>Clear the filter to see all.</div>`
+      : `<div class="empty"><b>No issues yet</b>File the first one above — it shows up here with an "awaiting fix" slot.</div>`;
+  resolvePrivImages();
+}
+
+/* ── image compression ─────────────────────────────────── */
+function loadViaImg(file) {
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); res(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("Couldn't read that image — try a PNG/JPG screenshot.")); };
+    img.src = url;
+  });
+}
+async function compress(file, maxW = 1200, q = 0.8) {
+  let src;
+  try { src = await createImageBitmap(file); }
+  catch { src = await loadViaImg(file); }
+  const w = src.width || src.naturalWidth, h = src.height || src.naturalHeight;
+  const s = Math.min(1, maxW / w);
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(w * s));
+  c.height = Math.max(1, Math.round(h * s));
+  c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+  const blob = await new Promise((res) => c.toBlob(res, "image/jpeg", q));
+  if (!blob) throw new Error("Image compression failed.");
+  return blob;
+}
+const blobToB64 = (blob) => new Promise((res, rej) => {
+  const fr = new FileReader();
+  fr.onload = () => res(String(fr.result).split(",")[1]);
+  fr.onerror = () => rej(new Error("Couldn't read image data."));
+  fr.readAsDataURL(blob);
+});
+
+/* ── writes ────────────────────────────────────────────── */
+async function putFile(path, b64, message, sha) {
+  const body = { message, content: b64, branch: BRANCH };
+  if (sha) body.sha = sha;
+  const r = await fetch(`${API}/contents/${path}`, {
+    method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify(body),
+  });
+  if (r.status === 401) { connState(false); throw new Error("Token rejected — update it in settings."); }
+  if (r.status === 409 || r.status === 422) { const e = new Error("conflict"); e.conflict = true; throw e; }
+  if (!r.ok) throw new Error("Upload failed (" + r.status + ")");
+  return r.json();
+}
+async function putPrivFile(path, b64, message) {
+  const body = { message, content: b64, branch: PRIV_BRANCH };
+  const r = await fetch(`${PRIV_API}/contents/${path}`, {
+    method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify(body),
+  });
+  if (r.status === 401) { connState(false); throw new Error("Token rejected — update it in settings."); }
+  if (r.status === 409 || r.status === 422) { const e = new Error("conflict"); e.conflict = true; throw e; }
+  if (!r.ok) throw new Error("Private upload failed (" + r.status + ")");
+  return r.json();
+}
+async function mutateJson(path, message, mutator, init) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const { data, sha, missing } = await loadJson(path);
+    const obj = missing ? JSON.parse(JSON.stringify(init || null)) : data;
+    if (!obj) throw new Error("Missing " + path);
+    mutator(obj);
+    try {
+      await putFile(path, b64encodeUtf8(JSON.stringify(obj, null, 2)), message, sha || undefined);
+      return obj;
+    } catch (e) {
+      if (!e.conflict || attempt === 3) throw e.conflict ? new Error("Sync conflict — try again.") : e;
+      await new Promise((r) => setTimeout(r, 800 * attempt));
+    }
+  }
+}
+async function mutateIssues(message, mutator) {
+  db = await mutateJson("data/issues.json", message, mutator);
+}
+
+/* ── submit flow ───────────────────────────────────────── */
+let pickedFiles = [];
+
+function updateSubmit() {
+  $("submit").disabled = !(pickedFiles.length > 0 && $("desc").value.trim().length > 2);
+}
+
+function renderPickZone() {
+  const hasPicks = pickedFiles.length > 0;
+  $("pick-thumbs").hidden = !hasPicks;
+  if (hasPicks) {
+    $("thumb-grid").innerHTML = pickedFiles.map((f, i) => {
+      const url = URL.createObjectURL(f);
+      return `<div class="thumb"><img src="${url}" alt="preview ${i + 1}" /><button class="rm-img" type="button" data-idx="${i}" aria-label="Remove image ${i + 1}">✕</button></div>`;
+    }).join("");
+    $("pick").classList.add("add-more");
+    $("pick-inner").innerHTML = `➕ &nbsp;Add more screenshots<span class="hint">tap · paste (Ctrl+V)</span>`;
+  } else {
+    $("pick").classList.remove("add-more");
+    $("pick-inner").innerHTML = `📷 &nbsp;Upload screenshots<span class="hint">tap to pick · or paste (Ctrl+V)</span>`;
+  }
+}
+
+function addPickedFile(f) {
+  if (!f || !f.type.startsWith("image/")) return;
+  pickedFiles.push(f);
+  renderPickZone();
+  updateSubmit();
+}
+
+$("file").addEventListener("change", () => {
+  for (const f of $("file").files) addPickedFile(f);
+  $("file").value = "";
+});
+
+document.addEventListener("paste", (ev) => {
+  for (const item of (ev.clipboardData?.items || [])) {
+    if (item.type.startsWith("image/")) addPickedFile(item.getAsFile());
+  }
+});
+
+$("thumb-grid").addEventListener("click", (ev) => {
+  const btn = ev.target.closest(".rm-img");
+  if (!btn) return;
+  ev.preventDefault();
+  pickedFiles.splice(parseInt(btn.dataset.idx, 10), 1);
+  renderPickZone();
+  updateSubmit();
+});
+
+$("clear-all").addEventListener("click", () => {
+  pickedFiles = [];
+  renderPickZone();
+  updateSubmit();
+});
+
+$("desc").addEventListener("input", updateSubmit);
+
+$("form").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  if (!token) { openSettings("A token is needed to submit."); return; }
+  const btn = $("submit");
+  btn.disabled = true; btn.classList.add("busy");
+  $("submit-label").textContent = "Uploading…";
+  try {
+    const id = "i-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" +
+      Array.from(crypto.getRandomValues(new Uint8Array(2)), (b) => b.toString(16).padStart(2, "0")).join("");
+    const imagePaths = [], imageCommits = [];
+    for (let i = 0; i < pickedFiles.length; i++) {
+      $("submit-label").textContent = `Uploading image ${i + 1} of ${pickedFiles.length}…`;
+      const blob = await compress(pickedFiles[i]);
+      const b64 = await blobToB64(blob);
+      if (b64.length > 5_000_000) throw new Error(`Image ${i + 1} too large even after compression.`);
+      const suffix = pickedFiles.length > 1 ? `-${i}` : "";
+      const imgRes = await putPrivFile(`images/${id}${suffix}.jpg`, b64, `issue ${id}: screenshot ${i + 1}`);
+      imagePaths.push(`images/${id}${suffix}.jpg`);
+      imageCommits.push(imgRes.commit?.sha || "");
+    }
+    let route = $("route").value.trim();
+    if (route && !route.startsWith("/")) route = "/" + route;
+    $("submit-label").textContent = "Saving issue…";
+    await mutateIssues(`issue ${id}: add`, (d) => {
+      if (d.issues.some((i) => i.id === id)) return;
+      d.issues.push({
+        id, createdAt: new Date().toISOString(), route: route || null,
+        description: $("desc").value.trim(),
+        imagePath: imagePaths[0], imageCommit: imageCommits[0],
+        imagePaths, imageCommits, imagePrivate: true,
+        status: "open", fix: null, history: [],
+      });
+    });
+    render();
+    $("form").reset(); pickedFiles = [];
+    renderPickZone();
+    toast("Issue filed ✓ synced to GitHub");
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  } catch (e) {
+    toast(e.message || "Something went wrong.", 4200);
+  } finally {
+    btn.classList.remove("busy");
+    $("submit-label").textContent = "Submit issue";
+    updateSubmit();
+  }
+});
+
+/* ── settings / token ──────────────────────────────────── */
+function connState(ok, login) {
+  const chip = $("chip-conn");
+  chip.classList.toggle("on", !!ok);
+  $("conn-label").textContent = ok ? login : (token ? "token?" : "connect");
+}
+async function testToken(t) {
+  const r = await fetch("https://api.github.com/user", {
+    headers: { Accept: "application/vnd.github+json", Authorization: "Bearer " + t },
+  });
+  if (!r.ok) throw new Error("Token rejected (" + r.status + ")");
+  return (await r.json()).login;
+}
+function openSettings(msg) {
+  $("token").value = token;
+  $("tok-state").textContent = msg || "";
+  $("tok-state").className = "tok-state" + (msg ? " bad" : "");
+  $("settings").showModal();
+}
+$("chip-conn").addEventListener("click", () => openSettings());
+$("tok-close").addEventListener("click", () => $("settings").close());
+$("tok-forget").addEventListener("click", () => {
+  token = ""; localStorage.removeItem("qaToken");
+  connState(false); $("token").value = "";
+  $("tok-state").textContent = "Token forgotten."; $("tok-state").className = "tok-state";
+});
+$("tok-save").addEventListener("click", async () => {
+  const t = $("token").value.trim();
+  if (!t) { $("tok-state").textContent = "Paste a token first."; $("tok-state").className = "tok-state bad"; return; }
+  $("tok-state").textContent = "Testing…"; $("tok-state").className = "tok-state";
+  try {
+    const login = await testToken(t);
+    token = t; localStorage.setItem("qaToken", t);
+    connState(true, login);
+    $("tok-state").textContent = "Connected as " + login + " ✓";
+    $("tok-state").className = "tok-state ok";
+    setTimeout(() => $("settings").close(), 700);
+    refresh(true);
+  } catch (e) {
+    $("tok-state").textContent = e.message;
+    $("tok-state").className = "tok-state bad";
+  }
+});
+
+/* ── QA report link ────────────────────────────────────── */
+function updateQrBtn() {
+  $("btn-qa-report").style.opacity = qaReportUrl ? "1" : "0.45";
+  $("btn-qa-report").title = qaReportUrl ? "Open QA Report" : "Configure QA Report URL";
+}
+updateQrBtn();
+$("btn-qa-report").addEventListener("click", () => {
+  if (qaReportUrl) { window.open(qaReportUrl, "_blank"); return; }
+  $("qa-report-url").value = qaReportUrl;
+  $("qa-report-dialog").showModal();
+});
+$("qr-close").addEventListener("click", () => $("qa-report-dialog").close());
+$("qr-forget").addEventListener("click", () => {
+  qaReportUrl = ""; localStorage.removeItem("qaReportUrl");
+  $("qa-report-url").value = "";
+  updateQrBtn();
+  toast("QA report URL cleared.");
+  $("qa-report-dialog").close();
+});
+$("qr-open").addEventListener("click", () => {
+  const u = $("qa-report-url").value.trim();
+  if (!u) return;
+  qaReportUrl = u; localStorage.setItem("qaReportUrl", u);
+  updateQrBtn();
+  $("qa-report-dialog").close();
+  window.open(u, "_blank");
+});
+
+/* ── lightbox ──────────────────────────────────────────── */
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest(".shot");
+  if (b && !b.classList.contains("priv-lock")) {
+    const full = b.dataset.full;
+    if (full) {
+      $("lightbox-img").src = full;
+      $("lightbox").showModal();
+    } else {
+      // Private image not yet loaded — try fetching
+      const privPath = b.querySelector("img[data-priv-path]")?.dataset.privPath;
+      if (privPath) {
+        fetchPrivImage(privPath).then(uri => {
+          if (uri) { $("lightbox-img").src = uri; $("lightbox").showModal(); }
+        });
+      }
+    }
+  }
+});
+$("lightbox").addEventListener("click", () => $("lightbox").close());
+
+/* ── resolve (user accepts a fix → off-board store) ────── */
+let archCache = null;
+async function resolveIssue(id, btn) {
+  const it = (db?.issues || []).find((i) => i.id === id);
+  // Resolvable when it's an in-review fix OR a user-review item being closed.
+  if (!it || !(it.status === "fixed" || (it.status === "open" && it.needsReview))) return;
+  if (!token) { openSettings("A token is needed to resolve."); return; }
+  if (!confirm("Mark this resolved? It moves off the board into Resolved.")) return;
+  btn.disabled = true;
+  try {
+    const snap = JSON.parse(JSON.stringify(it));
+    snap.status = "resolved";
+    snap.resolvedAt = new Date().toISOString();
+    snap.archivedAt = snap.resolvedAt; // back-compat with the archive store/sort
+    const path = `data/archive-${new Date().getFullYear()}.json`;
+    await mutateJson(path, `issue ${id}: resolved`, (a) => {
+      a.issues = a.issues || [];
+      if (!a.issues.some((x) => x.id === id)) a.issues.push(snap);
+    }, { version: 1, issues: [] });
+    await mutateIssues(`issue ${id}: remove from active (resolved)`, (d) => {
+      d.issues = d.issues.filter((x) => x.id !== id);
+    });
+    archCache = null;
+    render();
+    if (!$("arch").hidden) { $("arch").hidden = true; $("arch-toggle").textContent = "View resolved"; }
+    toast("Resolved ✓");
+  } catch (e) {
+    btn.disabled = false;
+    toast(e.message || "Resolve failed.", 4200);
+  }
+}
+// User rejects a fix → back to Claude for a re-fix, with an optional comment.
+// Mirrors the CLI `reopen`: previous fix is preserved in history (→ dropdown).
+async function markNotFixed(id, btn) {
+  const it = (db?.issues || []).find((i) => i.id === id);
+  if (!it || it.status !== "fixed") return;
+  if (!token) { openSettings("A token is needed to send it back."); return; }
+  const note = (prompt("What's still wrong? (optional — Claude reads this and re-fixes)") || "").trim();
+  btn.disabled = true;
+  try {
+    await mutateIssues(`issue ${id}: not fixed → re-fix`, (d) => {
+      const x = d.issues.find((i) => i.id === id);
+      if (!x) return;
+      x.history = x.history || [];
+      x.history.push({ at: new Date().toISOString(), event: "reopened", note: note || null, previousFix: x.fix });
+      x.fix = null;
+      x.status = "open";
+    });
+    render();
+    toast(note ? "Sent back with your note ✓" : "Sent back for re-fix ✓");
+  } catch (e) {
+    btn.disabled = false;
+    toast(e.message || "Couldn't send back.", 4200);
+  }
+}
+// Owner answers a user-review item: records the reply, clears the review flag
+// so the next loop tick acts on it with the reply as direction/context.
+async function respondReview(id, btn) {
+  const it = (db?.issues || []).find((i) => i.id === id);
+  if (!it || !it.needsReview) return;
+  if (!token) { openSettings("A token is needed to respond."); return; }
+  const reply = (prompt("Your response — decision or what you've provided (Claude reads this and proceeds):", it.reviewReply || "") || "").trim();
+  if (!reply) return;
+  btn.disabled = true;
+  try {
+    await mutateIssues(`issue ${id}: owner responded to review`, (d) => {
+      const x = d.issues.find((i) => i.id === id);
+      if (!x) return;
+      x.reviewReply = reply;
+      x.reviewRepliedAt = new Date().toISOString();
+      x.needsReview = false; // unblocked — back in the fix queue with the reply
+    });
+    render();
+    toast("Response saved — back to Claude ✓");
+  } catch (e) {
+    btn.disabled = false;
+    toast(e.message || "Couldn't save response.", 4200);
+  }
+}
+document.addEventListener("click", (ev) => {
+  const r = ev.target.closest("[data-resolve]");
+  if (r) { resolveIssue(r.dataset.resolve, r); return; }
+  const n = ev.target.closest("[data-notfixed]");
+  if (n) { markNotFixed(n.dataset.notfixed, n); return; }
+  const p = ev.target.closest("[data-respond]");
+  if (p) { respondReview(p.dataset.respond, p); return; }
+});
+// Tag filter chips — toggle the active tag and re-render (data-tag="" = All).
+$("tagbar").addEventListener("click", (ev) => {
+  const c = ev.target.closest(".tagchip");
+  if (!c) return;
+  activeTag = c.dataset.tag || null;
+  render();
+});
+$("arch-toggle").addEventListener("click", async () => {
+  const sec = $("arch"), t = $("arch-toggle");
+  if (!sec.hidden) { sec.hidden = true; t.textContent = "View resolved"; return; }
+  t.textContent = "Loading…";
+  try {
+    if (!archCache) {
+      const r = await fetch(`${API}/contents/data?ref=${BRANCH}&t=${Date.now()}`, { headers: headers(), cache: "no-store" });
+      if (!r.ok) throw new Error("Couldn't list archives (" + r.status + ")");
+      const files = (await r.json()).filter((f) => /^archive-\d{4}\.json$/.test(f.name));
+      const all = [];
+      for (const f of files) {
+        const { data } = await loadJson("data/" + f.name);
+        if (data?.issues) all.push(...data.issues);
+      }
+      archCache = all.sort((a, b) => (b.archivedAt || "").localeCompare(a.archivedAt || ""));
+    }
+    $("arch-list").innerHTML = archCache.length
+      ? archCache.map((i) => cardHtml(i, true)).join("")
+      : `<div class="empty">Nothing resolved yet.</div>`;
+    resolvePrivImages();
+    sec.hidden = false;
+    t.textContent = "Hide resolved";
+  } catch (e) {
+    toast(e.message || "Couldn't load resolved.", 4000);
+    t.textContent = "View resolved";
+  }
+});
+
+/* ── refresh wiring ────────────────────────────────────── */
+$("btn-refresh").addEventListener("click", () => refresh());
+$("banner-retry").addEventListener("click", () => refresh());
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && Date.now() - lastLoad > 30_000) refresh(true);
+});
+
+/* ── boot ──────────────────────────────────────────────── */
+// Fill config-driven labels (logo, settings repo, page title).
+function applyConfigLabels() {
+  const repoSlug = `${OWNER}/${REPO}`;
+  const logo = $("logo-label"); if (logo) logo.textContent = QA.TITLE;
+  const tokRepo = $("tok-repo-label"); if (tokRepo) tokRepo.textContent = repoSlug;
+  document.title = QA.TITLE;
+}
+applyConfigLabels();
+(async () => {
+  if (token) {
+    testToken(token).then((l) => connState(true, l)).catch(() => connState(false));
+  } else connState(false);
+  refresh();
+})();
+</script>
+</body>
+</html>

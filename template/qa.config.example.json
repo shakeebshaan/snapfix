@@ -1,0 +1,32 @@
+{
+  "_comment": "snapfix config. Copy to qa.config.json (the CLI writes it for you during `snapfix init`). JSON has no comments, so each section carries a `_comment` describing its keys. Full docs: README.md > Configuration. Local-only overrides go in qa.config.local.json (gitignored).",
+
+  "board": {
+    "_comment": "The two GitHub repos that back the board. `repo` is the PUBLIC repo (GitHub Pages + issue metadata, no images). `private` is the PRIVATE repo that holds screenshots only — never served, token-gated. `branch` is the branch both repos publish from (Pages source).",
+    "owner": "your-github-username",
+    "repo": "myapp-qa",
+    "private": "myapp-qa-private",
+    "branch": "main"
+  },
+
+  "app": {
+    "_comment": "Your actual application — the code the fix-issues skill edits and recaptures. `repo` is the path to the app repo relative to THIS config file (`.` in the copy that lives at your app root, which is where the skill runs). `devServer` is the local URL the recapture script hits. `viewport` is WIDTHxHEIGHT in CSS px (390x844 = iPhone-sized). `framework` is a hint for the skill (vite | next | cra | astro | other).",
+    "repo": ".",
+    "devServer": "http://localhost:5173",
+    "viewport": "390x844",
+    "framework": "vite"
+  },
+
+  "reproduce": {
+    "_comment": "How proof screenshots are recaptured after a fix. `tool` is the driver (playwright). `recaptureCmd` is the command run from the board repo; {route} is substituted with the issue's route and {out} with the output image path. The default points at the bundled recapture.mjs.",
+    "tool": "playwright",
+    "recaptureCmd": "node recapture.mjs {route} {out}"
+  },
+
+  "auth": {
+    "_comment": "How the recapture script reaches authenticated routes. `strategy`: \"none\" = routes are public, no login. \"seeded-jwt\" = a JWT is injected into localStorage[tokenKey] before navigating. \"manual-otp\" = the skill drives the login form and asks the human for the OTP code. `tokenKey` is the localStorage key the app reads the token from. `loginUrl` is the route the login flow starts at.",
+    "strategy": "none",
+    "tokenKey": "access_token",
+    "loginUrl": "/"
+  }
+}
