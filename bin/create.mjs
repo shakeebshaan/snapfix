@@ -33,6 +33,7 @@ import {
   mkdtempSync,
   cpSync,
   rmSync,
+  readdirSync,
 } from "node:fs";
 import {
   resolve,
@@ -44,6 +45,14 @@ import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { createInterface } from "node:readline";
 
+// Auto-setup helpers (zero-dep local modules). These power the one-line
+// autonomous setup: copy the app's design language, recommend project-relevant
+// loops, auto-tune the loop config, and seed a demo issue. See LOOP.md.
+import { extractTheme } from "./lib/theme.mjs";
+import { buildCatalog, selectLoops, recommendedLoopsMarkdown } from "./lib/loops.mjs";
+import { resolveTick, resolveTrigger, resolveViewport, tuneSatisfaction } from "./lib/tune.mjs";
+import { buildDemoIssue, seedDemoIssue } from "./lib/demo-issue.mjs";
+
 // ---------------------------------------------------------------------------
 // Paths
 // ---------------------------------------------------------------------------
@@ -53,7 +62,11 @@ const __dirname = dirname(__filename);
 // This file lives at <snapfix>/bin/create.mjs; product root is one level up.
 const PRODUCT_ROOT = resolve(__dirname, "..");
 const TEMPLATE_DIR = join(PRODUCT_ROOT, "template");
-const SKILL_SRC = join(PRODUCT_ROOT, "skill", "fix-issues", "SKILL.md");
+// Every skill dir under here (each containing a SKILL.md) is installed into the
+// app — fix-issues (the loop) + caveman (terse mode) + any others we bundle.
+const SKILLS_DIR = join(PRODUCT_ROOT, "skill");
+// The Loop Library catalog — recommended playbooks are copied from here.
+const LOOPS_DIR = join(PRODUCT_ROOT, "loops");
 
 // ---------------------------------------------------------------------------
 // Console helpers — simple unicode prefixes, no chalk dependency.
@@ -144,6 +157,10 @@ function parseArgs(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--yes" || a === "-y") args.yes = true;
+    else if (a === "--auto" || a === "-A" || a === "--one-line") { args.auto = true; args.yes = true; }
+    else if (a === "--no-fix") args.noFix = true;
+    else if (a === "--tick") args.tick = argv[++i];
+    else if (a === "--trigger") args.trigger = argv[++i];
     else if (a === "--name") args.name = argv[++i];
     else if (a === "--app-repo") args.appRepo = argv[++i];
     else if (a === "--dev-server") args.devServer = argv[++i];
@@ -159,6 +176,10 @@ function parseArgs(argv) {
         else if (k === "app-repo") args.appRepo = v;
         else if (k === "dev-server") args.devServer = v;
         else if (k === "owner") args.owner = v;
+        else if (k === "tick") args.tick = v;
+        else if (k === "trigger") args.trigger = v;
+        else if (k === "auto" || k === "one-line") { args.auto = true; args.yes = true; }
+        else if (k === "no-fix") args.noFix = true;
         else warn(`Unknown flag ignored: ${a}`);
       } else {
         warn(`Unknown flag ignored: ${a}`);
@@ -175,8 +196,15 @@ ${paint(C.bold, "snapfix")} — screenshot-to-AI-fix QA board, backed entirely b
 
 ${paint(C.bold, "Usage:")}
   npx github:OWNER/snapfix init [flags]
+  npx github:OWNER/snapfix init --auto          ${paint(C.dim, "# the one-line autonomous setup")}
 
 ${paint(C.bold, "Flags:")}
+  --auto, -A           One-line setup: read the project, copy its design language
+                       onto the board, recommend project-relevant loops, auto-tune
+                       the loop config, seed a demo issue, and fix it. Implies --yes.
+  --tick <seconds>     Watch/action poll cadence (loop.action.pollSeconds)
+  --trigger <kind>     Loop trigger: manual | schedule | action
+  --no-fix             With --auto: skip the final agent fix of the demo issue
   --name <repo>        Board repo name        (default: <project>-qa)
   --app-repo <path>    Path to the app repo   (default: ".")
   --dev-server <url>   Dev server URL         (auto-detected from framework)
@@ -189,7 +217,14 @@ ${paint(C.bold, "What it does:")}
   2. Deploys the static board + config to the public repo
   3. Enables GitHub Pages and prints the board URL
   4. Seeds the private repo's images/ directory
-  5. Installs the fix-issues skill + qa.config.json into your app repo
+  5. Installs the fix-issues + caveman skills + qa.config.json into your app repo
+
+${paint(C.bold, "--auto additionally:")}
+  • Copies the app's design language (colors, radius, font) onto the board
+  • Recommends project-relevant loops → RECOMMENDED-LOOPS.md + loops/
+  • Auto-tunes the loop (trigger, tick duration, satisfaction bar)
+  • Seeds a [snapfix demo] test issue on the board, then runs the fix-issues
+    loop once to fix it (skip with --no-fix; needs the 'claude' CLI on PATH)
 
 Re-running init is safe — every step is idempotent.
 Using --owner with an organization requires the gh token to have org access.
@@ -243,6 +278,48 @@ function detectFramework(appRepoPath) {
   if (deps["svelte"]) return { framework: "svelte", port: 5173 };
 
   return { framework: "unknown", port: 3000 };
+}
+
+// ---------------------------------------------------------------------------
+// gatherSignals — read the project to drive loop selection + config auto-tune.
+// Pure-ish (reads the app repo's fs); deterministic given the tree. Exported
+// for unit testing. `theme` is the result of extractTheme() (or null).
+// ---------------------------------------------------------------------------
+function gatherSignals(appRepoPath, detected, theme) {
+  const has = (rel) => existsSync(join(appRepoPath, rel));
+  let scripts = {};
+  let deps = {};
+  try {
+    const pkgPath = join(appRepoPath, "package.json");
+    if (existsSync(pkgPath)) {
+      const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+      scripts = pkg.scripts || {};
+      deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
+    }
+  } catch { /* unparseable package.json → treat as no signals */ }
+
+  // A real test script (not npm's "no test specified" placeholder).
+  const testScript = scripts.test || scripts["test:unit"] || "";
+  const hasTests =
+    !!testScript && !/no test specified/i.test(testScript);
+
+  const isWeb =
+    (detected && detected.framework !== "unknown") ||
+    has("index.html") ||
+    has(join("public", "index.html")) ||
+    has(join("src", "index.html"));
+
+  return {
+    framework: (detected && detected.framework) || "unknown",
+    port: (detected && detected.port) || 3000,
+    isWeb: !!isWeb,
+    hasTests,
+    hasCI: has(join(".github", "workflows")),
+    hasDesignTokens: !!(theme && theme.source && theme.source !== "none"),
+    hasDocs: has("README.md") || has("docs"),
+    hasTypeScript: has("tsconfig.json"),
+    desktop: !!(deps.electron || deps["@electron/remote"]),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -378,6 +455,9 @@ function buildQaConfig(resolved) {
       devServer,
       viewport,
       framework,
+      // Design tokens lifted from the app (--auto) so the board matches its
+      // look. null when not extracted. Mirrored into config.js for the board.
+      theme: resolved.theme || null,
     },
     reproduce: {
       tool: "playwright",
@@ -388,6 +468,71 @@ function buildQaConfig(resolved) {
       tokenKey,
       loginUrl: "/",
     },
+    // The fix-issues loop = trigger + goal (see LOOP.md). Static loop config
+    // lives here; the live, board-adjustable satisfaction knob lives in the
+    // board repo's data/loop.json (which overrides loop.goal.satisfaction).
+    loop: {
+      // How this board's fix loop is kicked: manual | schedule | action.
+      // --auto tunes this from the project; otherwise "manual".
+      trigger: resolved.trigger || "manual",
+      schedule: {
+        // Cadence for the schedule trigger and the agent command the runner
+        // (tools/loop.mjs) shells out to. Bring-your-own-agent; no cloud.
+        cron: resolved.cron || "0 9 * * *",
+        agentCmd: 'claude -p "/fix-issues"',
+      },
+      action: {
+        // Event the action trigger watches for, and how often it polls (the
+        // "tick duration"; --tick / auto-tuned).
+        on: "new-issue",
+        pollSeconds: Number.isFinite(Number(resolved.pollSeconds)) ? Number(resolved.pollSeconds) : 60,
+      },
+      goal: {
+        // LLM-as-judge bar (0–100) a fix must clear to post. data/loop.json
+        // overrides this live from the board's satisfaction slider.
+        satisfaction: Number.isFinite(Number(resolved.satisfaction)) ? Number(resolved.satisfaction) : 80,
+        // Verifiable gate: the app test suite must pass (and coverage clear the
+        // threshold) before a fix may be posted. coverage:0 disables coverage.
+        tests: {
+          required: true,
+          command: detectTestCommand(resolved.appRepoPath),
+          coverage: 0,
+        },
+      },
+      // Project-relevant loops from the Loop Library (--auto). Each:
+      // { slug, title, why }. The full playbooks ship into the app's loops/.
+      recommended: Array.isArray(resolved.recommended) ? resolved.recommended : [],
+    },
+  };
+}
+
+// Best-effort detection of the app's test command from its package.json. Falls
+// back to "npm test" (npm always defines a `test` script slot). Pure + exported
+// for unit testing.
+function detectTestCommand(appRepoPath) {
+  try {
+    const pkgPath = join(appRepoPath || ".", "package.json");
+    if (!existsSync(pkgPath)) return "npm test";
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+    const scripts = pkg.scripts || {};
+    if (scripts.test) return "npm test";
+    if (scripts["test:unit"]) return "npm run test:unit";
+    return "npm test";
+  } catch {
+    return "npm test";
+  }
+}
+
+// Live loop settings file seeded into the board repo. Browser-writable via the
+// GitHub contents API (like data/issues.json) so the satisfaction slider can
+// update it without a redeploy. Reads fall back to qa.config.json loop.goal.
+function buildLoopJson(resolved) {
+  return {
+    version: 1,
+    satisfaction: resolved.satisfaction ?? 80,
+    testGate: true,
+    updatedAt: null,
+    updatedBy: null,
   };
 }
 
@@ -403,11 +548,14 @@ function buildConfigJs(resolved) {
     privateRepo: priv,
     branch,
     title,
+    // Design tokens copied from the app (--auto). The board's applyTheme()
+    // maps these onto its CSS variables. null = keep the board's own theme.
+    theme: resolved.theme || null,
   };
   return (
     "// Auto-generated by `snapfix init`. Read by index.html as window.QA_CONFIG.\n" +
     "// Safe to edit for a custom domain or a renamed repo; keys must match the\n" +
-    "// board's expectations: { owner, repo, privateRepo, branch, title }.\n" +
+    "// board's expectations: { owner, repo, privateRepo, branch, title, theme }.\n" +
     "window.QA_CONFIG = " +
     JSON.stringify(cfg, null, 2) +
     ";\n"
@@ -456,6 +604,9 @@ function deployBoard(owner, board, resolved) {
 
     mkdirSync(join(work, "tools"), { recursive: true });
     cpSync(join(TEMPLATE_DIR, "tools", "qa.mjs"), join(work, "tools", "qa.mjs"));
+    // The loop runner ships beside qa.mjs (the trigger layer — see LOOP.md).
+    const loopSrc = join(TEMPLATE_DIR, "tools", "loop.mjs");
+    if (existsSync(loopSrc)) cpSync(loopSrc, join(work, "tools", "loop.mjs"));
 
     mkdirSync(join(work, "data"), { recursive: true });
     // Only seed issues.json if absent — NEVER clobber a board's live issue
@@ -465,6 +616,25 @@ function deployBoard(owner, board, resolved) {
       cpSync(join(TEMPLATE_DIR, "data", "issues.json"), issuesDest);
     } else {
       info("data/issues.json already present — leaving existing issues intact.");
+    }
+    // --auto: seed a [snapfix demo] test issue so the board isn't empty and the
+    // fix loop has something to act on. Idempotent (seedDemoIssue replaces any
+    // existing demo) and NEVER clobbers real issues — they're preserved.
+    if (resolved.auto && resolved.demoIssue) {
+      let db;
+      try { db = JSON.parse(readFileSync(issuesDest, "utf8")); }
+      catch { db = { version: 1, issues: [] }; }
+      const seeded = seedDemoIssue(db, resolved.demoIssue);
+      writeFileSync(issuesDest, JSON.stringify(seeded, null, 2) + "\n");
+      ok("Seeded a [snapfix demo] test issue on the board.");
+    }
+    // Live loop settings (satisfaction slider target). Seed only if absent so a
+    // re-run never resets a board owner's tuned satisfaction bar.
+    const loopDest = join(work, "data", "loop.json");
+    if (!existsSync(loopDest)) {
+      writeFileSync(loopDest, JSON.stringify(buildLoopJson(resolved), null, 2) + "\n");
+    } else {
+      info("data/loop.json already present — leaving existing loop settings intact.");
     }
 
     // Optional template extras (present once siblings land): copy if available.
@@ -699,26 +869,88 @@ function installIntoApp(appRepoPath, resolved) {
   writeFileSync(cfgDest, cfgJson);
   ok(`Wrote ${cfgDest}`);
 
-  // fix-issues skill.
-  if (!existsSync(SKILL_SRC)) {
-    warn("Skill source skill/fix-issues/SKILL.md not found in this snapfix package.");
-    info("Skipping skill install — update snapfix and re-run, or copy it manually.");
+  // Install EVERY bundled skill (fix-issues, caveman, …) into .claude/skills/.
+  installSkills(appRepoPath);
+
+  // --auto: drop the project-relevant loop playbooks + an index into the app.
+  if (resolved.auto && Array.isArray(resolved.recommended) && resolved.recommended.length) {
+    installRecommendedLoops(appRepoPath, resolved);
+  }
+}
+
+// Copy each bundled skill dir (SKILLS_DIR/<name>/SKILL.md + siblings like
+// LICENSE) into <app>/.claude/skills/<name>/. Never clobbers a customized
+// SKILL.md — writes the new one as a sidecar and flags it instead.
+function installSkills(appRepoPath) {
+  if (!existsSync(SKILLS_DIR)) {
+    warn("No bundled skills found in this snapfix package (skill/ missing).");
     return;
   }
-  const skillDir = join(appRepoPath, ".claude", "skills", "fix-issues");
-  const skillDest = join(skillDir, "SKILL.md");
-  mkdirSync(skillDir, { recursive: true });
-  if (existsSync(skillDest)) {
-    // Don't silently clobber a customized skill — write alongside + note it.
-    const sidecar = join(skillDir, "SKILL.snapfix-new.md");
-    cpSync(SKILL_SRC, sidecar);
-    warn(`A fix-issues SKILL.md already exists; left it untouched.`);
-    info(`Wrote the latest version next to it: ${sidecar}`);
-    info("Diff them and merge if you want the newest skill.");
-  } else {
-    cpSync(SKILL_SRC, skillDest);
-    ok(`Installed skill → ${skillDest}`);
+  let entries;
+  try { entries = readdirSync(SKILLS_DIR, { withFileTypes: true }); }
+  catch { entries = []; }
+  const skills = entries.filter((e) => e.isDirectory() && existsSync(join(SKILLS_DIR, e.name, "SKILL.md")));
+  if (!skills.length) {
+    warn("No installable skills under skill/ (each needs a SKILL.md).");
+    return;
   }
+  for (const e of skills) {
+    const srcDir = join(SKILLS_DIR, e.name);
+    const destDir = join(appRepoPath, ".claude", "skills", e.name);
+    const destSkill = join(destDir, "SKILL.md");
+    mkdirSync(destDir, { recursive: true });
+    if (existsSync(destSkill)) {
+      const sidecar = join(destDir, "SKILL.snapfix-new.md");
+      cpSync(join(srcDir, "SKILL.md"), sidecar);
+      warn(`Skill "${e.name}" already exists; left it untouched.`);
+      info(`Wrote the latest version next to it: ${sidecar}`);
+    } else {
+      // Copy the whole skill dir so LICENSE/assets travel with SKILL.md.
+      cpSync(srcDir, destDir, { recursive: true });
+      ok(`Installed skill → ${destDir}`);
+    }
+  }
+}
+
+// --auto: write RECOMMENDED-LOOPS.md and copy the selected loop playbooks into
+// <app>/loops/ so the project-relevant loops live with the code.
+function installRecommendedLoops(appRepoPath, resolved) {
+  const project = resolved.title ? resolved.title.replace(/ QA$/, "") : "your project";
+  const md = recommendedLoopsMarkdown(resolved.recommended, { project, catalog: resolved.catalog });
+  writeFileSync(join(appRepoPath, "RECOMMENDED-LOOPS.md"), md);
+  ok("Wrote RECOMMENDED-LOOPS.md (project-relevant loops).");
+
+  const destLoops = join(appRepoPath, "loops");
+  mkdirSync(destLoops, { recursive: true });
+  let copied = 0;
+  for (const r of resolved.recommended) {
+    const src = join(LOOPS_DIR, `${r.slug}.md`);
+    if (existsSync(src)) { cpSync(src, join(destLoops, `${r.slug}.md`)); copied++; }
+  }
+  if (copied) ok(`Copied ${copied} loop playbook${copied === 1 ? "" : "s"} → ${destLoops}`);
+}
+
+// --auto final step: run the agent once to fix the seeded demo issue. The agent
+// command is the same one the loop runner uses. Non-fatal + clearly guarded:
+// if the agent CLI isn't on PATH we print the command instead of failing setup.
+function runAgentFix(appRepoPath, agentCmd) {
+  heading("Fix the demo issue (fix-issues loop)");
+  // agentCmd is like: claude -p "/fix-issues". Split off the binary to probe it.
+  const bin = (agentCmd.match(/^\s*(\S+)/) || [])[1] || "claude";
+  const probe = run(bin, ["--version"]);
+  if (!probe.ok) {
+    warn(`'${bin}' CLI not found on PATH — skipping the automatic fix.`);
+    info(`Run it yourself from the app repo:  ${agentCmd}`);
+    return;
+  }
+  step(`Invoking the agent: ${paint(C.bold, agentCmd)}`);
+  info(`(cwd: ${appRepoPath})`);
+  // Inherit stdio so the user watches the agent work live. shell:true — agentCmd
+  // is OUR config string (trusted), like a cron line; never issue/remote input.
+  const r = spawnSync(agentCmd, { cwd: appRepoPath, stdio: "inherit", shell: true });
+  if (r.error) { warn(`Could not run the agent: ${r.error.message}`); return; }
+  if (r.status === 0) ok("Agent run complete — check the board for the proposed fix.");
+  else warn(`Agent exited ${r.status}. Re-run when ready:  ${agentCmd}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -726,7 +958,7 @@ function installIntoApp(appRepoPath, resolved) {
 // ---------------------------------------------------------------------------
 
 function finalSummary(resolved) {
-  const { owner, board, priv, boardUrl, appRepoRel } = resolved;
+  const { owner, board, priv, boardUrl, appRepoRel, auto, theme, recommended, trigger, pollSeconds } = resolved;
   const repoUrl = (r) => `https://github.com/${owner}/${r}`;
   const sep = paint(C.dim, "─".repeat(60));
 
@@ -738,6 +970,15 @@ function finalSummary(resolved) {
   console.log(`  ${paint(C.bold, "Image repo")}   ${repoUrl(priv)} (private)`);
   console.log(`  ${paint(C.bold, "App repo")}     ${appRepoRel}`);
   console.log(sep);
+
+  if (auto) {
+    console.log(`  ${paint(C.bold, "Theme")}        ${theme && theme.source !== "none" ? "copied from the app (" + theme.source + ")" : "board default (no app tokens found)"}`);
+    console.log(`  ${paint(C.bold, "Loop")}         trigger=${trigger} · tick=${pollSeconds}s`);
+    console.log(`  ${paint(C.bold, "Loops")}        ${(recommended || []).map((r) => r.slug).join(", ") || "—"}  ${paint(C.dim, "(RECOMMENDED-LOOPS.md + loops/)")}`);
+    console.log(`  ${paint(C.bold, "Demo issue")}   seeded "[snapfix demo]" on the board`);
+    console.log(`  ${paint(C.bold, "Skills")}       fix-issues + caveman → .claude/skills/`);
+    console.log(sep);
+  }
 
   console.log(paint(C.dim, "  Note: GitHub Pages can take ~1 minute to go live on first deploy."));
   console.log(paint(C.dim, "  Org repos require the gh token to have org access.\n"));
@@ -762,14 +1003,25 @@ function finalSummary(resolved) {
   console.log("    c. File an issue: pick a route, drop a screenshot, describe the bug.");
   console.log("       (The screenshot uploads to the PRIVATE repo via the API.)");
 
-  heading("3. Fix issues with Claude Code");
+  heading("3. Fix issues with Claude Code (the fix-issues loop)");
   console.log("  From inside your app repo:");
-  console.log("    • In Claude Code:   " + paint(C.bold, "/fix-issues"));
+  console.log("    • Manual trigger:   " + paint(C.bold, "/fix-issues"));
   console.log("    • Or pull the queue manually:");
   console.log("        " + paint(C.bold, "node tools/qa.mjs pull") + "   (run from the board repo clone)");
   console.log("");
-  console.log(paint(C.dim, "  The fix-issues skill reads open issues, fixes the real code,"));
-  console.log(paint(C.dim, "  recaptures proof, and posts before/after cards back to the board."));
+  console.log(paint(C.dim, "  The loop reads open issues, fixes the real code, runs your tests"));
+  console.log(paint(C.dim, "  (verifiable goal), self-scores the fix against your satisfaction bar"));
+  console.log(paint(C.dim, "  (LLM-as-judge goal), then posts before/after cards back to the board."));
+  console.log("");
+
+  heading("4. Automate the loop (schedule / action triggers)");
+  console.log("  Remove the human from the inner cycle (see LOOP.md):");
+  console.log("    • Status:    " + paint(C.bold, "node tools/loop.mjs status"));
+  console.log("    • One tick:  " + paint(C.bold, "node tools/loop.mjs run"));
+  console.log("    • Watch:     " + paint(C.bold, "node tools/loop.mjs watch") + "   (kick the agent when a new issue lands)");
+  console.log("    • Schedule:  " + paint(C.bold, "node tools/loop.mjs schedule") + "   (print the cron / Task Scheduler line)");
+  console.log("");
+  console.log(paint(C.dim, "  Tune the satisfaction bar live with the slider in the board header."));
   console.log("");
 }
 
@@ -823,8 +1075,17 @@ async function init(args) {
     );
   }
 
+  // Read the project: lift its design language + gather signals for loop
+  // selection and config auto-tuning. Both are best-effort and never throw.
+  const theme = extractTheme(appRepoPath);
+  const signals = gatherSignals(appRepoPath, detected, theme);
+
+  // Project-relevant loops from the Loop Library (catalog built from loops/).
+  let catalog = [];
+  try { catalog = buildCatalog(LOOPS_DIR); } catch { catalog = []; }
+  const recommended = catalog.length ? selectLoops(signals, catalog) : [];
+
   const branch = "main";
-  const viewport = "390x844";
   const title = `${project} QA`;
   // Default auth strategy is "none" (public routes). The skill + qa.config.json
   // document how to switch to seeded-jwt / manual-otp later.
@@ -832,6 +1093,18 @@ async function init(args) {
   const tokenKey = "access_token";
 
   const boardUrl = `https://${owner}.github.io/${board}/`;
+
+  // Auto-tuned loop knobs. These resolvers give sensible defaults everywhere;
+  // --auto / --tick / --trigger refine them (e.g. action+60s tick for web apps).
+  const viewport = resolveViewport(signals);
+  const pollSeconds = resolveTick(args.tick, signals);
+  const trigger = resolveTrigger(args, signals);
+  const satisfaction = tuneSatisfaction(signals);
+
+  // --auto seeds a demo issue (stamped now) so the loop has something to fix.
+  const demoIssue = args.auto
+    ? buildDemoIssue({ owner, route: "/", nowIso: new Date().toISOString(), project })
+    : null;
 
   const resolved = {
     owner,
@@ -847,6 +1120,18 @@ async function init(args) {
     title,
     authStrategy,
     tokenKey,
+    // LLM-as-judge satisfaction bar (auto-tuned); the board slider tunes it live.
+    satisfaction,
+    pollSeconds,
+    trigger,
+    // Auto-setup additions (see lib/*). theme → board re-skin; recommended →
+    // project loops; demoIssue → seeded test issue; auto → one-line mode.
+    theme,
+    recommended,
+    catalog,
+    signals,
+    auto: !!args.auto,
+    demoIssue,
   };
 
   ok(`Project        ${project}`);
@@ -856,6 +1141,14 @@ async function init(args) {
   ok(`App repo       ${appRepoPath}`);
   ok(`Framework      ${detected.framework}`);
   ok(`Dev server     ${devServer}`);
+  ok(`Loop           trigger=${trigger} · tick=${pollSeconds}s · judge≥${satisfaction}`);
+  if (theme && theme.source && theme.source !== "none") {
+    ok(`Design language copied from ${theme.source}${theme.accent ? `  (accent ${theme.accent})` : ""}`);
+  } else {
+    info("No app design tokens found — board keeps its default theme.");
+  }
+  if (recommended.length) ok(`Recommended loops  ${recommended.map((r) => r.slug).join(", ")}`);
+  if (args.auto) ok(`Demo issue     seeding "[snapfix demo]" then ${args.noFix ? "skipping" : "running"} the fix`);
 
   if (!args.yes) {
     const go = await prompt("Proceed?", "yes");
@@ -888,10 +1181,15 @@ async function init(args) {
   // 7. SEED PRIVATE REPO
   seedPrivateRepo(owner, resolved.priv);
 
-  // 8. INSTALL SKILL + CONFIG INTO APP REPO
+  // 8. INSTALL SKILLS + CONFIG (+ recommended loops in --auto) INTO APP REPO
   installIntoApp(appRepoPath, resolved);
 
-  // 9. FINAL OUTPUT
+  // 9. --auto: fix the seeded demo issue by running the fix-issues loop once.
+  if (resolved.auto && !args.noFix) {
+    runAgentFix(appRepoPath, 'claude -p "/fix-issues"');
+  }
+
+  // 10. FINAL OUTPUT
   finalSummary(resolved);
 }
 
@@ -943,4 +1241,13 @@ if (!process.env.SNAPFIX_NO_MAIN) {
   main();
 }
 
-export { detectFramework, buildQaConfig, buildConfigJs, sanitizeRepoName, parseArgs };
+export {
+  detectFramework,
+  gatherSignals,
+  buildQaConfig,
+  buildConfigJs,
+  buildLoopJson,
+  detectTestCommand,
+  sanitizeRepoName,
+  parseArgs,
+};

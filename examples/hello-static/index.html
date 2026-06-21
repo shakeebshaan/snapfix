@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>snapfix demo — Hello Static</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --card: #171a23;
+      --ink: #e7e9ee;
+      --muted: #9aa1ad;
+      --accent: #6ea8fe;
+      --line: #262a35;
+      --ok: #4ade80;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--ink);
+      font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    main {
+      width: 100%;
+      max-width: 360px;
+      display: grid;
+      gap: 20px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 26px;
+      letter-spacing: -0.02em;
+    }
+    header p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 20px;
+      display: grid;
+      gap: 14px;
+    }
+    .count {
+      font-size: 48px;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      font-variant-numeric: tabular-nums;
+    }
+    .count small {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+    button {
+      appearance: none;
+      border: 1px solid var(--line);
+      background: var(--accent);
+      color: #0b1020;
+      font: inherit;
+      font-weight: 600;
+      padding: 12px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: transform 0.05s ease, filter 0.15s ease;
+    }
+    button:hover { filter: brightness(1.08); }
+    button:active { transform: translateY(1px); }
+    .reset {
+      background: transparent;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    footer {
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+    footer code {
+      color: var(--accent);
+      background: #11141c;
+      padding: 1px 6px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Hello, snapfix</h1>
+      <p>A tiny static app to try the screenshot-to-AI-fix loop end to end.</p>
+    </header>
+
+    <section class="card" aria-label="Counter">
+      <div class="count">
+        <small>You have clicked</small>
+        <span id="count">0</span>
+      </div>
+      <!-- intentional demo bug: this counter button is mislabeled "Decrement" but the click handler increments. File this on the board and run /fix-issues to watch the loop correct the label (or the handler) to match. -->
+      <button id="bump" type="button">Decrement</button>
+      <button id="reset" class="reset" type="button">Reset</button>
+    </section>
+
+    <footer>
+      Filed a bug yet? Snap this screen on your board, then run <code>/fix-issues</code>.
+    </footer>
+  </main>
+
+  <script>
+    const countEl = document.getElementById('count');
+    let count = 0;
+    const render = () => { countEl.textContent = String(count); };
+
+    document.getElementById('bump').addEventListener('click', () => {
+      count += 1; // increments — but the button says "Decrement" (the demo bug)
+      render();
+    });
+    document.getElementById('reset').addEventListener('click', () => {
+      count = 0;
+      render();
+    });
+
+    render();
+  </script>
+</body>
+</html>

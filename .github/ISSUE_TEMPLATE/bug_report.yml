@@ -1,0 +1,69 @@
+name: Bug report
+description: Something in snapfix is broken. Snap the details here and we'll fix the real code.
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. snapfix has **zero runtime dependencies** and **GitHub is the only backend** — the more precise the repro, the faster the loop closes.
+
+        > Heads up: never paste a screenshot or attachment that contains anything sensitive. The board keeps screenshots in a **private** repo on purpose — this public issue tracker is not the place for them.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part?
+      description: Where does the bug live?
+      options:
+        - CLI (snapfix init / setup)
+        - Board UI (the static HTML board)
+        - fix-issues skill (the agent contract)
+        - Loop runner (tools/loop.mjs)
+        - Docs (README / LOOP.md / others)
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you observe? Paste the exact error output or terminal log if there is one.
+      placeholder: "When I ran `npx github:shakeebshaan/snapfix init`, it ..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      description: What should have happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The minimal sequence that triggers it. We can't fix what we can't reproduce.
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: snapfix targets Node >= 18 on Windows + POSIX. Tell us where you hit this.
+      value: |
+        - OS:
+        - Node version (`node --version`):
+        - gh CLI version (`gh --version`), if relevant:
+        - snapfix version / commit, if known:
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Config snippets (`qa.config.json` with secrets redacted), related issues, hunches — all welcome.
+    validations:
+      required: false

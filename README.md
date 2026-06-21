@@ -8,6 +8,14 @@
 
 Project-agnostic: point it at any web app (Vite, Next, CRA, Astro, plain static — anything Playwright can open).
 
+> **snapfix is a loop.** A *loop* lets an AI agent work autonomously toward a goal —
+> removing the human from the inner cycle (concept: Forward Future's
+> [Loop Library](https://signals.forwardfuture.ai/loop-library/)). A loop =
+> **trigger** (manual · schedule · action) + **goal** (*verifiable*: tests pass —
+> *or* *LLM-as-judge*: the agent decides it's satisfied). The fix-issues QA flow is
+> snapfix's flagship loop; the model is documented in **[LOOP.md](LOOP.md)** and a
+> catalog of reusable loops lives in **[loops/](loops/)**.
+
 ---
 
 ## Quick start
@@ -23,10 +31,27 @@ That one command:
 1. Creates **two GitHub repos** for your project — `<app>-qa` (public board) and `<app>-qa-private` (private image store).
 2. Enables **GitHub Pages** on the public repo and deploys the board.
 3. Writes **`config.js`** (board runtime config) and **`qa.config.json`** (project config).
-4. Installs the **`fix-issues` skill** into your app's `.claude/skills/`.
+4. Installs the **`fix-issues`** + **`caveman`** skills into your app's `.claude/skills/`.
 5. Prints your live board URL: `https://<owner>.github.io/<app>-qa/`
 
 Open that URL on your phone, connect a token, and start snapping bugs.
+
+### One-line autonomous setup
+
+Want snapfix to set *everything* up and prove the loop end-to-end in a single command?
+
+```bash
+npx github:shakeebshaan/snapfix init --auto
+```
+
+On top of the steps above, `--auto`:
+
+- **Copies your app's design language** onto the board (accent, background, text, radius, font — lifted from your CSS / Tailwind / Google fonts) so the board looks like your product.
+- **Recommends project-relevant loops** from the [Loop Library](loops/) based on what it detects (web, tests, CI, design tokens, docs) → `RECOMMENDED-LOOPS.md` + the playbooks in `loops/`.
+- **Auto-tunes the loop** — trigger, **tick duration** (`--tick <seconds>`), and the satisfaction bar — from your project's signals.
+- **Seeds a `[snapfix demo]` test issue** on the board, then runs the `fix-issues` loop once to act on it (skip with `--no-fix`; needs the `claude` CLI on your PATH).
+
+`--auto` runs non-interactively (implies `--yes`). Re-running is safe — the demo issue is replaced, not duplicated, and real issues are never touched.
 
 ---
 
@@ -68,6 +93,10 @@ The board is a **single static HTML file** — no build step, no framework. It t
 | **A board at a URL** | `https://<owner>.github.io/<app>-qa/` — open it on any device. Issues sorted: needs-your-review → open → resolved. |
 | **File issues from your phone** | Snap a screenshot, type what's wrong, submit. Works as a one-handed mobile flow. |
 | **AI fixes with proof** | The agent edits real app code and posts a **before/after card** — your bug shot next to a fresh recapture of the fixed screen. |
+| **Goal-gated fixes** | A fix only posts when it clears the loop's goal: the app's **tests pass** (verifiable) *and* the agent's **self-score ≥ your satisfaction bar** (LLM-as-judge). Each card shows the proof badges. |
+| **Satisfaction slider** | Tune the LLM-judge bar live from the board header (◎ judge ≥ N). Higher = stricter, more refactor loops before a fix reaches you. |
+| **Multi-user** | Everyone connects their own GitHub token; every action is attributed (*filed by* / *fixed by* / *answered by*, with avatars). No accounts, no server. |
+| **Triggers** | Manual (`/fix-issues`), or automate the loop locally with `tools/loop.mjs` — `schedule` (cron) and `watch` (kick the agent when a new issue lands). |
 | **Two-way review** | Verify each fix on the board: **✓ Resolve**, **✗ Not fixed** (re-fix loop), or **↩ Respond** when the agent asks a question. |
 | **Zero infrastructure** | No server to run, no DB to back up, no hosting bill. It's GitHub repos + Pages. |
 
@@ -117,18 +146,43 @@ The board is a **single static HTML file** — no build step, no framework. It t
 
 ---
 
+## The goal & the triggers
+
+snapfix's fix loop has a **goal** with two gates — a fix is posted only when **both** clear (the satisfaction gate is exactly the "submit to the board" control):
+
+- **Verifiable — the app's tests pass.** Before posting, the loop runs your test command (`loop.goal.tests.command`) and checks coverage (`loop.goal.tests.coverage`). Red tests → no post. Run it directly with `node tools/loop.mjs verify`.
+- **LLM-as-judge — satisfaction.** The agent self-scores each fix 0–100 and only posts when the score clears the **satisfaction bar** you set with the board's header slider (stored in `data/loop.json`). Set it to **0** to disable the judge gate; raise it to make the agent refactor until it's confident.
+
+And a **trigger** — Manual today, automate it locally (no cloud secrets) with the loop runner:
+
+```bash
+node tools/loop.mjs status                 # loop config, open count, the live satisfaction bar
+node tools/loop.mjs run                     # one tick: invoke your agent once
+node tools/loop.mjs watch [--interval 60]   # action trigger: kick the agent when a new issue lands
+node tools/loop.mjs schedule                # print the cron / Task Scheduler line to install
+node tools/loop.mjs verify                  # the verifiable gate (tests + coverage)
+```
+
+See **[LOOP.md](LOOP.md)** for the full model and **[loops/](loops/)** for a catalog of reusable loops.
+
 ## Configuration
 
-`snapfix init` writes **`qa.config.json`** into both your **app repo** (at its root, where the `fix-issues` skill runs) and the board repo. Every snapfix file (board, CLI, skill, recapture) agrees on these exact keys:
+`snapfix init` writes **`qa.config.json`** into both your **app repo** (at its root, where the `fix-issues` skill runs) and the board repo. Every snapfix file (board, CLI, skill, recapture, loop runner) agrees on these exact keys:
 
 ```json
 {
   "board":     { "owner": "USER", "repo": "myapp-qa", "private": "myapp-qa-private", "branch": "main" },
   "app":       { "repo": ".", "devServer": "http://localhost:5173", "viewport": "390x844", "framework": "vite" },
   "reproduce": { "tool": "playwright", "recaptureCmd": "node recapture.mjs {route} {out}" },
-  "auth":      { "strategy": "none", "tokenKey": "access_token", "loginUrl": "/" }
+  "auth":      { "strategy": "none", "tokenKey": "access_token", "loginUrl": "/" },
+  "loop":      { "trigger": "manual",
+                 "schedule": { "cron": "0 9 * * *", "agentCmd": "claude -p \"/fix-issues\"" },
+                 "action":   { "on": "new-issue", "pollSeconds": 60 },
+                 "goal":     { "satisfaction": 80, "tests": { "required": true, "command": "npm test", "coverage": 0 } } }
 }
 ```
+
+The `loop` section is the trigger + goal config. `loop.goal.satisfaction` is the default LLM-judge bar; the board's slider overrides it live via `data/loop.json`. `loop.goal.tests` is the verifiable gate (`required`, `command`, `coverage` %). See [LOOP.md](LOOP.md) for the full reference.
 
 ### `board` — the two GitHub repos
 
@@ -234,6 +288,19 @@ Set `auth.strategy` to `seeded-jwt` (inject a token) or `manual-otp` (the skill 
 Yes. Auto-detection assumes `OWNER.github.io/REPO`; for a custom domain, set explicit values in `config.js`.
 
 ---
+
+## Develop & contribute
+
+snapfix is open source and dependency-free — clone it and hack:
+
+```bash
+git clone https://github.com/shakeebshaan/snapfix.git
+cd snapfix
+npm test                 # zero deps to install — runs the built-in node:test suite
+npm run test:coverage    # coverage report (Node 20+)
+```
+
+The repo: `bin/` (the setup CLI), `template/` (the board + `tools/qa.mjs` + `tools/loop.mjs` + `recapture.mjs`), `skill/fix-issues/` (the agent contract), `loops/` (the Loop Library), `tests/` (the suite). The suite covers the pure logic and the loop's verifiable-gate; the GitHub/git/Playwright integration layer is exercised by integration tests and real-world runs. See **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 ## License
 
