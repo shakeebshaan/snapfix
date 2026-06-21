@@ -51,7 +51,7 @@ import { createInterface } from "node:readline";
 import { extractTheme } from "./lib/theme.mjs";
 import { buildCatalog, selectLoops, recommendedLoopsMarkdown } from "./lib/loops.mjs";
 import { resolveTick, resolveTrigger, resolveViewport, tuneSatisfaction } from "./lib/tune.mjs";
-import { buildDemoIssue, seedDemoIssue } from "./lib/demo-issue.mjs";
+import { buildDemoIssue, seedDemoIssue, isDemoIssue } from "./lib/demo-issue.mjs";
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -110,7 +110,10 @@ function run(cmd, args, opts = {}) {
     cwd: opts.cwd,
     input: opts.input,
     // `shell:false` (default) keeps us safe from path-with-spaces / injection.
-    shell: false,
+    // Callers may opt into shell:true ONLY for a TRUSTED bare command (e.g. the
+    // Windows agent-CLI probe, which must resolve .cmd/.bat/.ps1 npm shims that
+    // shell:false can't find) — never with remote/issue input.
+    shell: opts.shell === true,
     maxBuffer: 32 * 1024 * 1024,
   });
   if (r.error) {
@@ -201,7 +204,8 @@ ${paint(C.bold, "Usage:")}
 ${paint(C.bold, "Flags:")}
   --auto, -A           One-line setup: read the project, copy its design language
                        onto the board, recommend project-relevant loops, auto-tune
-                       the loop config, seed a demo issue, and fix it. Implies --yes.
+                       the loop config, seed a demo issue, and run the loop on it.
+                       Implies --yes.
   --tick <seconds>     Watch/action poll cadence (loop.action.pollSeconds)
   --trigger <kind>     Loop trigger: manual | schedule | action
   --no-fix             With --auto: skip the final agent fix of the demo issue
@@ -224,7 +228,8 @@ ${paint(C.bold, "--auto additionally:")}
   • Recommends project-relevant loops → RECOMMENDED-LOOPS.md + loops/
   • Auto-tunes the loop (trigger, tick duration, satisfaction bar)
   • Seeds a [snapfix demo] test issue on the board, then runs the fix-issues
-    loop once to fix it (skip with --no-fix; needs the 'claude' CLI on PATH)
+    loop once against it — it posts a fix if there's a real bug, otherwise it
+    replies that the loop works (skip with --no-fix; needs 'claude' on PATH)
 
 Re-running init is safe — every step is idempotent.
 Using --owner with an organization requires the gh token to have org access.
@@ -569,6 +574,25 @@ const BOARD_GITIGNORE =
   "node_modules/\n" +
   ".DS_Store\n";
 
+// True if any data/archive-*.json under `boardDir` already holds the demo
+// issue — i.e. the user completed (resolved) it. Used so re-running init --auto
+// doesn't resurrect a finished demo as a fresh open card. Pure (reads fs);
+// exported for unit testing.
+function demoAlreadyArchived(boardDir) {
+  const dataDir = join(boardDir, "data");
+  if (!existsSync(dataDir)) return false;
+  let files;
+  try { files = readdirSync(dataDir); } catch { return false; }
+  for (const f of files) {
+    if (!/^archive-\d{4}\.json$/.test(f)) continue;
+    try {
+      const a = JSON.parse(readFileSync(join(dataDir, f), "utf8"));
+      if (Array.isArray(a.issues) && a.issues.some(isDemoIssue)) return true;
+    } catch { /* skip an unparseable archive */ }
+  }
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Step 5 — deploy the board into a temp clone of the public repo.
 // ---------------------------------------------------------------------------
@@ -619,14 +643,20 @@ function deployBoard(owner, board, resolved) {
     }
     // --auto: seed a [snapfix demo] test issue so the board isn't empty and the
     // fix loop has something to act on. Idempotent (seedDemoIssue replaces any
-    // existing demo) and NEVER clobbers real issues — they're preserved.
+    // existing demo in issues.json) and NEVER clobbers real issues. Also
+    // archive-aware: if the user already resolved the demo (it's in an archive),
+    // do NOT resurrect it as a fresh open issue on a later re-run.
     if (resolved.auto && resolved.demoIssue) {
-      let db;
-      try { db = JSON.parse(readFileSync(issuesDest, "utf8")); }
-      catch { db = { version: 1, issues: [] }; }
-      const seeded = seedDemoIssue(db, resolved.demoIssue);
-      writeFileSync(issuesDest, JSON.stringify(seeded, null, 2) + "\n");
-      ok("Seeded a [snapfix demo] test issue on the board.");
+      if (demoAlreadyArchived(work)) {
+        info("Demo issue already resolved + archived — not re-seeding it.");
+      } else {
+        let db;
+        try { db = JSON.parse(readFileSync(issuesDest, "utf8")); }
+        catch { db = { version: 1, issues: [] }; }
+        const seeded = seedDemoIssue(db, resolved.demoIssue);
+        writeFileSync(issuesDest, JSON.stringify(seeded, null, 2) + "\n");
+        ok("Seeded a [snapfix demo] test issue on the board.");
+      }
     }
     // Live loop settings (satisfaction slider target). Seed only if absent so a
     // re-run never resets a board owner's tuned satisfaction bar.
@@ -937,7 +967,10 @@ function runAgentFix(appRepoPath, agentCmd) {
   heading("Fix the demo issue (fix-issues loop)");
   // agentCmd is like: claude -p "/fix-issues". Split off the binary to probe it.
   const bin = (agentCmd.match(/^\s*(\S+)/) || [])[1] || "claude";
-  const probe = run(bin, ["--version"]);
+  // On Windows the agent CLI is commonly an npm shim (claude.cmd/.ps1, no .exe);
+  // spawn with shell:false can't resolve those, so probe through the shell on
+  // win32. `bin` is split from our own trusted agentCmd — no injection risk.
+  const probe = run(bin, ["--version"], { shell: process.platform === "win32" });
   if (!probe.ok) {
     warn(`'${bin}' CLI not found on PATH — skipping the automatic fix.`);
     info(`Run it yourself from the app repo:  ${agentCmd}`);
@@ -949,7 +982,7 @@ function runAgentFix(appRepoPath, agentCmd) {
   // is OUR config string (trusted), like a cron line; never issue/remote input.
   const r = spawnSync(agentCmd, { cwd: appRepoPath, stdio: "inherit", shell: true });
   if (r.error) { warn(`Could not run the agent: ${r.error.message}`); return; }
-  if (r.status === 0) ok("Agent run complete — check the board for the proposed fix.");
+  if (r.status === 0) ok("Agent run complete — open the board to see what it did (a proposed fix, a reply, or the issue left open).");
   else warn(`Agent exited ${r.status}. Re-run when ready:  ${agentCmd}`);
 }
 
@@ -1148,7 +1181,7 @@ async function init(args) {
     info("No app design tokens found — board keeps its default theme.");
   }
   if (recommended.length) ok(`Recommended loops  ${recommended.map((r) => r.slug).join(", ")}`);
-  if (args.auto) ok(`Demo issue     seeding "[snapfix demo]" then ${args.noFix ? "skipping" : "running"} the fix`);
+  if (args.auto) ok(`Demo issue     seeding "[snapfix demo]" then ${args.noFix ? "skipping the loop" : "running the loop on it"}`);
 
   if (!args.yes) {
     const go = await prompt("Proceed?", "yes");
@@ -1248,6 +1281,7 @@ export {
   buildConfigJs,
   buildLoopJson,
   detectTestCommand,
+  demoAlreadyArchived,
   sanitizeRepoName,
   parseArgs,
 };

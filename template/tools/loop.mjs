@@ -25,6 +25,10 @@
 // TRUST NOTE: loop.schedule.agentCmd and loop.goal.tests.command are run through
 // the shell. They come from YOUR OWN qa.config.json (the same trust level as a
 // cron line or an npm script) — never from issue content or any remote input.
+// CAUTION: a copy of qa.config.json also ships in the PUBLIC board repo. Editing
+// agentCmd / tests.command THERE (e.g. via a merged PR) and then running the
+// loop from the board repo executes that string on your machine — review PRs
+// that touch those fields as you would a change to a cron line or npm script.
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname, join, parse as parsePath } from "node:path";
 import { fileURLToPath } from "node:url";

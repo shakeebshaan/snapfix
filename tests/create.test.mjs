@@ -14,6 +14,7 @@ const {
   buildConfigJs,
   buildLoopJson,
   detectTestCommand,
+  demoAlreadyArchived,
   sanitizeRepoName,
   parseArgs,
 } = await import("../bin/create.mjs");
@@ -224,6 +225,36 @@ test("buildQaConfig: threads tuned trigger/tick/satisfaction + recommended + the
   assert.equal(cfg.app.theme.accent, "#3366ff");
   assert.equal(cfg.loop.recommended.length, 1);
   assert.equal(cfg.loop.recommended[0].slug, "sub-50ms-page-load");
+});
+
+test("demoAlreadyArchived: true when an archive holds the demo (no re-seed)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "snapfix-arch-"));
+  try {
+    mkdirSync(join(dir, "data"), { recursive: true });
+    writeFileSync(join(dir, "data", "archive-2026.json"),
+      JSON.stringify({ version: 1, issues: [{ id: "i-demo-snapfix", status: "resolved" }] }));
+    assert.equal(demoAlreadyArchived(dir), true);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("demoAlreadyArchived: false when archives hold only real issues", () => {
+  const dir = mkdtempSync(join(tmpdir(), "snapfix-arch-"));
+  try {
+    mkdirSync(join(dir, "data"), { recursive: true });
+    writeFileSync(join(dir, "data", "archive-2026.json"),
+      JSON.stringify({ version: 1, issues: [{ id: "i-real-1", description: "bug" }] }));
+    assert.equal(demoAlreadyArchived(dir), false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("demoAlreadyArchived: false on no data dir, and false (not throw) on bad JSON", () => {
+  const dir = mkdtempSync(join(tmpdir(), "snapfix-arch-"));
+  try {
+    assert.equal(demoAlreadyArchived(dir), false); // no data/
+    mkdirSync(join(dir, "data"), { recursive: true });
+    writeFileSync(join(dir, "data", "archive-2026.json"), "{ not json");
+    assert.equal(demoAlreadyArchived(dir), false); // unparseable → false, no throw
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("buildConfigJs: includes theme in window.QA_CONFIG", () => {

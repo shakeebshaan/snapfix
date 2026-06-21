@@ -71,7 +71,10 @@ function loadConfig() {
   return board;
 }
 
-const board = loadConfig();
+// SNAPFIX_NO_MAIN keeps the module inert on import (no config load, no CLI
+// dispatch) so pure helpers — buildPullEntry — can be unit-tested. Matches the
+// guard in loop.mjs / create.mjs.
+const board = process.env.SNAPFIX_NO_MAIN ? {} : loadConfig();
 
 // The fix-issues loop's goal settings (see LOOP.md). Live values from the board
 // repo's data/loop.json (the satisfaction slider's target) override the static
@@ -170,8 +173,38 @@ const allFlag = (name) => {
 };
 const rawUrl = (path, commit) => `https://raw.githubusercontent.com/${OWNER_REPO}/${commit || BRANCH}/${path}`;
 
+// Map one open issue → its `pull` manifest entry. Image-less issues (e.g. the
+// [snapfix demo] seed: imagePaths:[], imagePath:null) MUST NOT blow up — guard
+// the paths so we never join(ROOT, null) / extname(null), which would abort the
+// whole pull (and so the --auto demo). `dl(privPath, idx)` downloads a private
+// image to a local path (or returns null). Pure + exported for unit testing.
+function buildPullEntry(i, root, dl) {
+  const paths = (Array.isArray(i.imagePaths) && i.imagePaths.length)
+    ? i.imagePaths
+    : (i.imagePath ? [i.imagePath] : []);
+  const images = i.imagePrivate
+    ? paths.map((p, idx) => dl(p, idx)).filter(Boolean)
+    : paths.map((p) => join(root, p));
+  return {
+    id: i.id,
+    createdAt: i.createdAt,
+    route: i.route,
+    description: i.description,
+    imagePrivate: !!i.imagePrivate,
+    image: images[0] || null,
+    images,
+    reopenNote: (i.history || []).filter((h) => h.event === "reopened").slice(-1)[0]?.note || null,
+    needsReview: !!i.needsReview,
+    reviewReason: i.reviewReason || null,
+    reviewReply: i.reviewReply || null,
+    author: i.author || null,              // who filed it (multi-user)
+    tags: i.tags || null,
+  };
+}
+
 const [, , cmd, idArg] = process.argv;
 
+if (!process.env.SNAPFIX_NO_MAIN) {
 try {
   if (cmd === "list") {
     git("pull", "--rebase", "origin", BRANCH);
@@ -192,39 +225,13 @@ try {
     const open = db.issues
       .filter((i) => i.status === "open")
       .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""))
-      .map((i) => {
-        const paths = i.imagePaths || [i.imagePath];
-        let image, images;
-        if (i.imagePrivate) {
-          // Download private images locally so Claude can read them
-          const dlDir = join(ROOT, "tmp", "downloads", i.id);
-          mkdirSync(dlDir, { recursive: true });
-          images = paths.map((p, idx) => {
-            const ext = extname(p) || ".jpg";
-            const localPath = join(dlDir, `img-${idx}${ext}`);
-            return downloadPrivImage(p, localPath);
-          }).filter(Boolean);
-          image = images[0] || null;
-        } else {
-          image = join(ROOT, i.imagePath);
-          images = paths.map((p) => join(ROOT, p));
-        }
-        return {
-          id: i.id,
-          createdAt: i.createdAt,
-          route: i.route,
-          description: i.description,
-          imagePrivate: !!i.imagePrivate,
-          image,
-          images,
-          reopenNote: (i.history || []).filter((h) => h.event === "reopened").slice(-1)[0]?.note || null,
-          needsReview: !!i.needsReview,
-          reviewReason: i.reviewReason || null,
-          reviewReply: i.reviewReply || null,
-          author: i.author || null,              // who filed it (multi-user)
-          tags: i.tags || null,
-        };
-      });
+      .map((i) => buildPullEntry(i, ROOT, (p, idx) => {
+        // Download private images locally so Claude can read them.
+        const dlDir = join(ROOT, "tmp", "downloads", i.id);
+        mkdirSync(dlDir, { recursive: true });
+        const ext = extname(p) || ".jpg";
+        return downloadPrivImage(p, join(dlDir, `img-${idx}${ext}`));
+      }));
     // The loop's live goal — the agent reads the satisfaction bar + test gate
     // from here so it knows the bar it must clear before resolving (LOOP.md).
     console.log(JSON.stringify({ open, count: open.length, loop: loopSettings() }, null, 2));
@@ -400,3 +407,6 @@ try {
   console.error("ERROR: " + e.message);
   process.exit(1);
 }
+}
+
+export { buildPullEntry };
