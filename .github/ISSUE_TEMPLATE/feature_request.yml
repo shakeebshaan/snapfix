@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest an improvement or a new loop for snapfix.
+title: "[feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Got an idea? Tell us the problem first, the solution second. snapfix grows by staying small — proposals that respect the ethos land fastest.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the problem?
+      description: The pain you're hitting today. What's hard, missing, or surprising? Don't lead with the fix — lead with the friction.
+      placeholder: "I want to ... but snapfix doesn't ..."
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like snapfix to do? A new flag, a board control, a loop, a doc — describe it concretely.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Other approaches you weighed, and why this one wins. "I just did it by hand" is a valid alternative.
+    validations:
+      required: false
+  - type: checkboxes
+    id: ethos
+    attributes:
+      label: Ethos check
+      description: snapfix lives or dies by these constraints. Please confirm your idea fits — or, if it can't, say so in the proposal and we'll talk it through.
+      options:
+        - label: This works with **zero runtime npm dependencies** (Node >= 18 builtins only, ESM, Windows + POSIX friendly).
+          required: true
+        - label: This keeps **GitHub as the only backend** — no server, no database, no third-party service.
+          required: true

@@ -28,5 +28,16 @@
     "strategy": "none",
     "tokenKey": "access_token",
     "loginUrl": "/"
+  },
+
+  "loop": {
+    "_comment": "The fix-issues loop = trigger + goal (see LOOP.md). `trigger`: manual | schedule | action — how the loop is kicked. `schedule.cron` is the cadence and `schedule.agentCmd` is the agent invocation tools/loop.mjs shells out to (bring-your-own-agent; no cloud). `action.on`/`pollSeconds` configure the event watcher. `goal.satisfaction` is the LLM-as-judge bar (0-100) a fix must clear to post — the board's satisfaction slider overrides it live via data/loop.json. `goal.tests` is the verifiable gate: `required` enforces it, `command` is the app's test command, `coverage` is the minimum %% (0 disables the coverage check).",
+    "trigger": "manual",
+    "schedule": { "cron": "0 9 * * *", "agentCmd": "claude -p \"/fix-issues\"" },
+    "action": { "on": "new-issue", "pollSeconds": 60 },
+    "goal": {
+      "satisfaction": 80,
+      "tests": { "required": true, "command": "npm test", "coverage": 0 }
+    }
   }
 }

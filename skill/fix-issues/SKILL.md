@@ -1,26 +1,35 @@
 ---
 name: fix-issues
-description: Fetch open QA issues from the snapfix board, fix each in the app, recapture the screen, and publish results. Use when asked to "fix issues", "fix the QA issues", or "run the issue loop".
+description: Fetch open QA issues from the snapfix board, fix each in the app, run the verifiable test gate, self-score against the satisfaction bar (LLM-as-judge), recapture proof, and publish. Use when asked to "fix issues", "fix the QA issues", or "run the loop".
 user-invocable: true
 argument-hint: "[issue id (optional — default: all open)]"
 ---
 
 # Fix QA Issues Loop
 
-This is the snapfix automation: filed QA issues (screenshot + description, posted
-from the board) come in, you reproduce each in the real app, fix the **root cause**
-in the app's source, recapture proof, and publish a before/after card back to the
-board. GitHub is the only backend — a public board repo (metadata + static page)
-and a private repo (screenshots). You never touch GitHub directly; the board's
-`tools/qa.mjs` CLI does, via the `gh` CLI.
+This is the snapfix automation — **a loop** (see `LOOP.md`). Filed QA issues
+(screenshot + description, posted from the board) come in; you reproduce each in the
+real app, fix the **root cause** in the app's source, prove the fix clears the loop's
+**goal**, recapture proof, and publish a before/after card back to the board. GitHub is
+the only backend — a public board repo (metadata + static page) and a private repo
+(screenshots). You never touch GitHub directly; the board's `tools/qa.mjs` CLI does, via
+the `gh` CLI.
 
-Each issue has a LEFT side (the user's screenshot + description) and a RIGHT side
-you populate (the fixed screenshot + a plain-language root-cause/fix note).
+**A loop = trigger + goal.** The *trigger* kicked you off (manual `/fix-issues`, a
+schedule, or an action watcher — see §8). The *goal* is what you must satisfy before a
+fix may post. snapfix uses **both goal kinds at once**:
 
-> **Everything project-specific lives in `qa.config.json`.** This skill is generic.
-> Read that file first and drive every step from it — board repo location, dev
-> server URL, viewport, recapture command, and auth strategy. Never hardcode a
-> repo name, port, route, or login flow that the config can tell you.
+- **Verifiable** — the app's **test suite passes** (and coverage clears the threshold).
+- **LLM-as-judge** — you **self-score each fix 0–100** and only post when the score
+  clears the board's **satisfaction bar**.
+
+Each issue has a LEFT side (the user's screenshot + description) and a RIGHT side you
+populate (the fixed screenshot, the root-cause/fix note, and the goal proof).
+
+> **Everything project-specific lives in `qa.config.json`.** This skill is generic. Read
+> that file first and drive every step from it — board repo location, dev server URL,
+> viewport, recapture command, auth strategy, and the loop's goal. Never hardcode a repo
+> name, port, route, login flow, test command, or satisfaction bar.
 
 If an issue id was passed as the argument, operate on that single issue. Otherwise
 process **all open issues, oldest first**.
@@ -35,9 +44,11 @@ search upward if not found). Parse it once; refer back to these keys throughout:
 ```json
 {
   "board":     { "owner": "USER", "repo": "myapp-qa", "private": "myapp-qa-private", "branch": "main" },
-  "app":       { "repo": "..", "devServer": "http://localhost:5173", "viewport": "390x844", "framework": "vite" },
+  "app":       { "repo": ".", "devServer": "http://localhost:5173", "viewport": "390x844", "framework": "vite" },
   "reproduce": { "tool": "playwright", "recaptureCmd": "node recapture.mjs {route} {out}" },
-  "auth":      { "strategy": "none", "tokenKey": "access_token", "loginUrl": "/" }
+  "auth":      { "strategy": "none", "tokenKey": "access_token", "loginUrl": "/" },
+  "loop":      { "trigger": "manual",
+                 "goal": { "satisfaction": 80, "tests": { "required": true, "command": "npm test", "coverage": 0 } } }
 }
 ```
 
@@ -50,18 +61,16 @@ search upward if not found). Parse it once; refer back to these keys throughout:
 | `app.framework` | how to start the dev server if it's down (e.g. `vite` → `npm run dev`) |
 | `reproduce.recaptureCmd` | the command to capture proof; `{route}` and `{out}` are substituted |
 | `auth.strategy` | `none` \| `seeded-jwt` \| `manual-otp` — how to get an authenticated session |
-| `auth.tokenKey` | localStorage key the app reads its JWT from (for `seeded-jwt`) |
-| `auth.loginUrl` | the route to drive for `manual-otp` login |
+| `loop.goal.satisfaction` | the **default** LLM-as-judge bar (0–100). The **live** bar comes from the `pull` manifest (`loop.satisfaction`) — the board's slider can move it; trust the manifest value. |
+| `loop.goal.tests` | the **verifiable** gate: `required` (enforce it), `command` (the app's test command), `coverage` (minimum %, 0 disables) |
 
-If `qa.config.json` is missing, stop and tell the user to run `npx github:OWNER/snapfix init`
-(or to create the config) — the loop can't run without it.
+If `qa.config.json` is missing, stop and tell the user to run `npx github:OWNER/snapfix init`.
 
 ---
 
 ## 1. Sync the board
 
-Locate the board repo. Resolve its local path (a sibling checkout of `board.repo`,
-or wherever it was cloned). If it isn't present locally, clone it:
+Locate the board repo (a sibling checkout of `board.repo`, or clone it):
 
 ```
 gh repo clone <board.owner>/<board.repo> <local board path>
@@ -73,27 +82,24 @@ Then pull the open issues as a manifest:
 node <board path>/tools/qa.mjs pull
 ```
 
-`pull` rebases the board repo, then prints a JSON manifest of open issues with
-**locally-downloaded private images**. Each entry:
+`pull` rebases the board repo, then prints JSON: `{ open: [...], count, loop }`. The
+`loop` block is **the live goal** — read it before you start fixing:
 
 ```jsonc
 {
-  "id": "...",
-  "createdAt": "...",
-  "route": "/some/route",          // may be null — infer from the screenshot if so
-  "description": "...",
-  "imagePrivate": true,
-  "image": "<abs local path>",      // first screenshot, already downloaded
-  "images": ["<abs path>", ...],    // all screenshots (multi-image support)
-  "reopenNote": "...|null",         // owner's note if a prior fix was rejected
-  "needsReview": false,
-  "reviewReason": "...|null",
-  "reviewReply": "...|null",        // owner's answer to a prior needs-review (read this!)
-  "tags": ["..."]|null
+  "open": [ {
+    "id": "...", "createdAt": "...", "route": "/some/route", "description": "...",
+    "imagePrivate": true, "image": "<abs path>", "images": ["<abs path>", ...],
+    "reopenNote": "...|null", "needsReview": false, "reviewReason": "...|null",
+    "reviewReply": "...|null", "author": "octocat|null", "tags": ["..."]|null
+  } ],
+  "count": 1,
+  "loop": { "satisfaction": 80, "testGate": true, "testCommand": "npm test", "coverage": 0 }
 }
 ```
 
-If `count` is 0 → report "no open issues" and stop.
+`loop.satisfaction` is the **bar a fix must reach to post**; `loop.testGate` says whether
+tests are required. If `count` is 0 → report "no open issues" and stop.
 
 ---
 
@@ -104,13 +110,12 @@ until it serves, then continue. Start command by `app.framework`:
 
 | `app.framework` | start command |
 | --- | --- |
-| `vite` / `next` / `react` / `vue` | `npm run dev` (in `app.repo`) |
+| `vite` / `next` / `react` / `vue` / `sveltekit` / `angular` | `npm run dev` (in `app.repo`) |
 | `static` | serve the directory (e.g. `npx serve`) |
-| anything else | run the project's documented dev command; if unknown, check `package.json` `scripts.dev` / `scripts.start` |
+| anything else | the project's documented dev command; if unknown, check `package.json` `scripts.dev` / `scripts.start` |
 
-Do not assume the port — use the exact `app.devServer` value. If the configured port
-is taken by an unrelated process, surface that rather than reproducing against the
-wrong app.
+Use the exact `app.devServer` value — don't assume the port. If it's taken by an
+unrelated process, surface that rather than reproducing against the wrong app.
 
 ---
 
@@ -118,22 +123,15 @@ wrong app.
 
 Branch on `auth.strategy`:
 
-- **`none`** — nothing to do. Routes are public; reproduce directly.
-- **`seeded-jwt`** — obtain a valid JWT and inject it before navigating:
-  open `app.devServer`, then in the browser set `localStorage[auth.tokenKey]` to the
-  token and reload. Where the token comes from is project-specific (a dev/mint
-  script, an env var, or a long-lived test token) — if the project documents one,
-  use it; if there is no valid token available, set the issue to needs-review (see
-  §5) explaining the auth blocker rather than guessing.
-- **`manual-otp`** — drive the login UI and ask the human for the code:
-  1. Navigate to `auth.loginUrl` on the dev server (Playwright MCP).
-  2. Enter the test account / request the code, then **ask the user for the OTP**
-     in chat and submit it.
-  3. After login, the app stores its session itself; subsequent navigations reuse it.
-  This is the only sanctioned mid-loop human question (OTP can't be inferred).
+- **`none`** — nothing to do. Reproduce directly.
+- **`seeded-jwt`** — obtain a valid JWT and inject it into `localStorage[auth.tokenKey]`
+  before navigating. If no valid token is available, set the issue to needs-review (§5)
+  explaining the auth blocker rather than guessing.
+- **`manual-otp`** — drive the login UI and **ask the human for the OTP** (the only
+  sanctioned mid-loop human question). After login the app reuses the session.
 
 Verify you land on an authenticated page before processing issues. If auth fails and
-can't be recovered, stop and report — don't reproduce against a logged-out app.
+can't be recovered, stop and report.
 
 ---
 
@@ -141,61 +139,78 @@ can't be recovered, stop and report — don't reproduce against a logged-out app
 
 For each issue in the manifest, in `createdAt` order:
 
-1. **Read the inputs.** Use the Read tool on every path in `images[]` (it renders the
-   screenshots) and read `description`, `route`, and — if present — `reopenNote`
-   (owner's reason a prior fix was rejected) and `reviewReply` (owner's answer to a
+1. **Read the inputs.** Read every path in `images[]` and read `description`, `route`,
+   `reopenNote` (why a prior fix was rejected) and `reviewReply` (owner's answer to a
    prior needs-review). These notes are direction; honor them.
 
-2. **Reproduce.** In the browser (`reproduce.tool`, default Playwright MCP), set the
-   viewport to `app.viewport`, navigate to `app.devServer` + `route`, and confirm you
-   can see the reported problem. If `route` is null/wrong, infer it from the
-   screenshot and the app's routes.
-   - **Can't reproduce** → leave the issue **open**, note it in the wrap-up, and move
-     on. Do **not** resolve an issue you couldn't reproduce.
+2. **Reproduce.** Set the viewport to `app.viewport`, navigate to `app.devServer` +
+   `route`, and confirm the reported problem. If `route` is null/wrong, infer it.
+   - **Can't reproduce** → leave the issue **open**, note it in the wrap-up, move on. Do
+     **not** resolve an issue you couldn't reproduce.
 
-3. **Root-cause and fix.** Find the real cause in the app's source (`app.repo`) and
-   fix *that* — not a cosmetic patch over the symptom. Match the project's existing
-   conventions, design tokens, and component patterns. Keep the change surgical:
-   every changed line should trace to this issue.
-   - **Genuinely ambiguous** (multiple valid interpretations, a product/design
-     decision, or a missing asset/credential you can't supply) → **don't guess.**
-     Set the issue to needs-review (§5) and move on to the next issue.
+3. **Root-cause and fix.** Find the real cause in the app's source and fix *that* — not a
+   cosmetic patch. Match the project's conventions, design tokens, and component
+   patterns. Keep the change surgical.
+   - **Genuinely ambiguous** (multiple valid interpretations, a product/design decision,
+     or a missing asset/credential) → **don't guess.** Set the issue to needs-review (§5)
+     and move on.
 
 4. **Verify live.** Reload the reproduced screen and confirm the problem is gone and
-   nothing adjacent broke. Verification is by execution — seeing it fixed in the
-   running app, not by reading the diff.
+   nothing adjacent broke. Verification is by execution, not by reading the diff.
 
-5. **Recapture proof.** Run `reproduce.recaptureCmd` with `{route}` → the issue's
-   route and `{out}` → an output path **inside the board repo's `tmp/`**, never inside
-   the app repo (screenshots must never enter the app's git history, and the board
-   keeps proof out of the public repo by uploading via the CLI):
+5. **Meet the loop's goal — BOTH gates (this is the loop's whole point).**
+
+   **(a) Verifiable goal — tests.** When `loop.testGate` is true, run the verifiable
+   gate from the app repo:
 
    ```
-   # ensure <board path>/tmp exists, then e.g.
+   node <board path>/tools/loop.mjs verify
+   ```
+
+   It runs `loop.goal.tests.command` and checks coverage. **Exit 0 = goal met.** If it
+   fails, the fix isn't done — fix the failing tests / add the missing coverage and
+   re-run. Never post a fix while tests are red. (If your fix changes behavior, update or
+   add the tests that encode that behavior — a passing suite that doesn't cover the fix
+   is not real proof.)
+
+   **(b) LLM-as-judge goal — satisfaction.** Self-score the fix **0–100** against the
+   live bar (`loop.satisfaction` from the manifest). Judge honestly on: did it fix the
+   **root cause** (not the symptom), is it surgical and convention-matching, is the
+   recaptured screen actually correct, did you avoid regressions. **If your score is
+   below the bar, you are not done** — refactor/improve and re-score (this is the
+   "refactor until satisfied" loop) until the score clears the bar, or flag needs-review
+   (§5) if you can't honestly reach it. Keep a one-line rationale for the score.
+
+6. **Recapture proof.** Run `reproduce.recaptureCmd` with `{route}` → the issue's route
+   and `{out}` → a path **inside the board repo's `tmp/`** (never inside the app repo):
+
+   ```
    node recapture.mjs <route> "<board path>/tmp/<id>-fix.png"
    ```
 
-   Then **Read the PNG** to confirm the fix is actually visible in the captured image.
-   If recapture fails (auth expired, navigation failure, etc.), fix the cause and
-   retry — don't publish an unverified or stale shot.
+   Then **Read the PNG** to confirm the fix is visible. If recapture fails, fix the cause
+   and retry — don't publish a stale/unverified shot.
 
-6. **Publish.** Resolve the issue with the proof and a user-facing note:
+7. **Publish (only after BOTH gates pass).** Commit your fix first (§7), then:
 
    ```
    node <board path>/tools/qa.mjs resolve <id> \
      --image "<board path>/tmp/<id>-fix.png" \
      --desc "Root cause: … Fix: …" \
-     --app-commit <app sha>
+     --app-commit <app sha> \
+     --tests pass --coverage <pct-or-omit> \
+     --judge <your-score 0-100> --judge-note "<one-line why you're satisfied>"
    ```
 
-   - `--image` is repeatable: a fix spanning two screens / scroll positions can pass
-     multiple `--image` flags (shown side-by-side on the board).
-   - `--desc` is shown to the user — 1–3 plain sentences: what was actually wrong and
-     what you changed. No jargon dumps.
-   - `--app-commit` is the commit sha of your fix (commit first, see §6).
-   - `resolve` uploads the shot to the **private** repo via the `gh` API and commits
-     only metadata to the public board. The published fix is a **proposed fix** until
-     the human accepts it (§5).
+   - `qa.mjs resolve` **re-checks both gates** and **refuses to post** if `--tests pass`
+     is missing while the gate is on, or if `--judge` is below the live satisfaction bar.
+     This is a backstop — you should already have met them in step 5.
+   - `--image` is repeatable (a multi-screen fix shows shots side-by-side).
+   - `--desc` is shown to the user — 1–3 plain sentences: what was wrong, what you
+     changed. No jargon dumps.
+   - The fix is attributed to your GitHub login automatically (`qa.mjs` reads it from the
+     `gh` session) and shows as *fixed by you* on the card.
+   - The published fix is a **proposed fix** until the human accepts it (§5).
 
 ---
 
@@ -204,51 +219,44 @@ For each issue in the manifest, in `createdAt` order:
 The board is a conversation, not a one-way dump. Two directions:
 
 **You → human (you're blocked).** When you can't proceed without a human decision —
-ambiguous requirement, a product/design call, a needed asset or credential you can't
-produce — **do not guess and do not silently skip.** Flag it:
+ambiguous requirement, a product/design call, a needed asset/credential, or **you
+honestly can't reach the satisfaction bar** — do not guess and do not silently skip:
 
 ```
 node <board path>/tools/qa.mjs review <id> --reason "<what you need / why you can't proceed>" [--tags a,b]
 ```
 
-This sets `needsReview` on the issue; the board floats it to the top with a **"User
-review"** card showing your reason and **Resolve / Reject / Respond** buttons. Then
-move on to other issues — never stall the whole loop on one blocker.
+This floats the issue to the top with a **"User review"** card. Then move on to other
+issues — never stall the whole loop on one blocker.
 
 **Human → you (their reply).** The human acts on the card:
-- **Respond** → records `reviewReply` and clears `needsReview`, putting the issue back
-  in the open queue *with their answer attached*. On the next loop tick you read
-  `reviewReply` from the manifest and proceed using it as direction.
-- **Resolve** → accepts the current state and moves the issue off the board (into the
-  resolved archive). This is how a *proposed fix* becomes *done* — it is not done
-  until the human taps Resolve.
-- **Reject** ("not fixed") → sends the issue back to the open queue with an optional
-  note. The note arrives as `reopenNote` in the manifest; the **prior fix is preserved
-  in the issue's `history` (the board's "previous fix" dropdown)** — never lost. Read
-  the note, understand why the first attempt missed, and re-fix.
-
-Net: a `resolve` you publish is a **proposal**. Acceptance (Resolve), rejection
-(Reject → re-fix), and clarification (Respond → `reviewReply`) are the human's, and
-each comes back to you through the next `pull`.
+- **Respond** → records `reviewReply` (and who replied) and clears `needsReview`, putting
+  the issue back in the open queue *with their answer*. Next loop tick you read
+  `reviewReply` and proceed using it as direction.
+- **Resolve** → accepts the current state and moves the issue to the resolved archive.
+  This is how a *proposed fix* becomes *done* — not done until the human taps Resolve.
+- **Reject** ("not fixed") → back to the open queue with an optional `reopenNote`; the
+  prior fix is preserved in `history` (the board's "previous fix" dropdown). Read the
+  note, understand why the first attempt missed, and re-fix.
 
 ---
 
 ## 6. Conventions
 
-- **Can't reproduce** → leave open, note it in the summary, do **not** resolve.
-- **Ambiguous / blocked on a human** → `review` it (§5) rather than guessing. Keep going on the rest.
-- **One commit per issue** (subject like `fix(qa): <id> — <short>`), or a single batch
-  commit if you fixed several in one pass — match the scope. Pass that sha as
-  `--app-commit`. Commit before `resolve` so the sha is real.
-- **Root cause, not cosmetic.** A patch that hides the symptom but leaves the cause is
-  not a fix.
+- **Both goal gates before posting.** Tests green (verifiable) **and** self-score ≥
+  satisfaction (judge). A fix that clears neither is not a fix.
+- **Can't reproduce** → leave open, note it, do **not** resolve.
+- **Ambiguous / blocked / can't reach the bar** → `review` it (§5) rather than guessing.
+- **One commit per issue** (subject like `fix(qa): <id> — <short>`), or one batch commit
+  for several fixes. Commit before `resolve` so `--app-commit <sha>` is real.
+- **Root cause, not cosmetic.** A patch that hides the symptom is not a fix.
 - **Surgical changes.** Don't refactor unrelated code or "improve" adjacent files.
 - **Screenshots stay out of the app repo.** Recapture output goes to the board repo's
-  `tmp/` only; the CLI moves it to the private image store. Nothing image-related is
-  ever committed to the public board or the app repo.
-- **Project flow docs.** If the project documents a user-flow/source-of-truth doc (in
-  `qa.config.json`, the app's `CLAUDE.md`, or a `docs/` convention) and your fix
-  changes a user-facing flow, update that doc in the same commit.
+  `tmp/` only; the CLI moves it to the private image store.
+- **Tests encode the fix.** If your fix changes user-facing behavior, the test you rely
+  on for the verifiable gate should fail before the fix and pass after.
+- **Project flow docs.** If a fix changes a documented user flow, update that doc in the
+  same commit.
 
 ---
 
@@ -256,11 +264,29 @@ each comes back to you through the next `pull`.
 
 End with a summary table — one row per issue:
 
-| id | status | note |
-| --- | --- | --- |
-| `<id>` | fixed | root-cause one-liner + board URL |
-| `<id>` | needs-review | what you're waiting on |
-| `<id>` | left open | couldn't reproduce / why |
+| id | status | goal | note |
+| --- | --- | --- | --- |
+| `<id>` | fixed | tests ✓ · judge 88 | root-cause one-liner + board URL |
+| `<id>` | needs-review | — | what you're waiting on |
+| `<id>` | left open | — | couldn't reproduce / why |
 
 The board URL is `https://<board.owner>.github.io/<board.repo>/`. Link it so the human
-can review the proposed fixes and Resolve / Reject / Respond.
+can Resolve / Reject / Respond.
+
+---
+
+## 8. Triggers — running this loop without a human (optional)
+
+Manual (`/fix-issues`) is one trigger. To remove the human from the inner cycle, the
+board ships `tools/loop.mjs` (see `LOOP.md`):
+
+| Trigger | Command | What it does |
+| --- | --- | --- |
+| **Manual** | `/fix-issues` | what you're doing now |
+| **Schedule** | `node tools/loop.mjs schedule` | prints the cron / Task Scheduler line that runs the agent on a cadence |
+| **Action** | `node tools/loop.mjs watch` | polls the board for new open issues and kicks the agent when work lands |
+| **Status** | `node tools/loop.mjs status` | shows the live goal (satisfaction bar, test gate) + open count |
+
+These shell out to `loop.schedule.agentCmd` (default `claude -p "/fix-issues"`), so the
+scheduled/action runs re-enter this very skill. The satisfaction bar is tuned live from
+the board's header slider — always trust the `loop` block in the `pull` manifest.

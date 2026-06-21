@@ -63,6 +63,11 @@
   }
   .chip.conn .st { width: 7px; height: 7px; border-radius: 50%; background: hsl(0 0% 75%); }
   .chip.conn.on .st { background: var(--accent); }
+  .chip.loop {
+    background: hsl(263 60% 96%); color: hsl(263 50% 42%); border-color: hsl(263 50% 90%);
+    cursor: pointer;
+  }
+  .chip.loop.off { background: var(--card); color: var(--muted); border-color: var(--line); }
   .iconbtn {
     border: 1px solid var(--line); background: var(--card); color: var(--muted);
     border-radius: 10px; width: 34px; height: 34px; display: grid; place-items: center;
@@ -131,6 +136,37 @@
   .tagchip.active { background: var(--accent-soft); color: var(--accent-ink); border-color: transparent; }
   .card-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
   .card-tag { font-size: 11px; font-weight: 600; color: var(--muted); background: hsl(40 15% 94%); border-radius: 999px; padding: 2px 8px; }
+  /* Multi-user attribution: who filed / fixed / answered (login + avatar). */
+  .actor { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--muted); font-weight: 500; }
+  .actor img { width: 16px; height: 16px; border-radius: 50%; display: block; background: var(--line); }
+  .actor b { color: var(--ink); font-weight: 600; }
+  /* Goal-proof badges on a proposed fix: verifiable (tests/coverage) + judge. */
+  .goalbadges { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 2px; }
+  .gbadge {
+    font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 9px;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .gbadge.pass { background: var(--accent-soft); color: var(--accent-ink); }
+  .gbadge.fail { background: hsl(0 80% 95%); color: hsl(0 55% 40%); }
+  .gbadge.judge { background: hsl(263 60% 95%); color: hsl(263 50% 42%); }
+  /* Loop settings sheet — satisfaction slider + test gate toggle. */
+  .slider-row { margin-top: 16px; }
+  .slider-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+  .slider-head .val { font-size: 22px; font-weight: 700; color: var(--accent-ink); }
+  .slider-head .val.off { color: var(--muted); }
+  input[type="range"] { width: 100%; accent-color: var(--accent); height: 28px; }
+  .toggle-row { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-size: 14px; }
+  .toggle-row input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .loop-meta { margin-top: 10px; font-size: 12px; color: var(--muted); min-height: 16px; }
+  /* Board footer — contribute / clone affordance. */
+  .board-foot {
+    display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; justify-content: center;
+    margin: 28px 0 12px; padding-top: 16px; border-top: 1px solid var(--line);
+    font-size: 12.5px; color: var(--muted); text-align: center;
+  }
+  .board-foot b { color: var(--ink); font-weight: 700; }
+  .board-foot a { color: var(--accent-ink); font-weight: 600; text-decoration: none; }
+  .board-foot a:hover { text-decoration: underline; }
   .archbtn {
     border: 1px solid var(--line); background: transparent; color: var(--muted);
     font: inherit; font-size: 12px; font-weight: 600; border-radius: 999px;
@@ -307,6 +343,7 @@
     <div class="chips">
       <span class="chip open" id="chip-open">– open</span>
       <span class="chip fixed" id="chip-fixed">– fixed</span>
+      <button class="chip loop" id="chip-loop" type="button" title="Loop goal — satisfaction bar a fix must clear to post">◎ judge ≥ –</button>
       <button class="chip conn" id="chip-conn" type="button"><span class="st"></span><span id="conn-label">connect</span></button>
       <button class="iconbtn" id="btn-qa-report" type="button" title="Open QA Report" aria-label="Open local QA report">⊞</button>
       <button class="iconbtn" id="btn-refresh" type="button" title="Refresh" aria-label="Refresh">⟳</button>
@@ -355,6 +392,11 @@
     <h2>Resolved</h2>
     <div id="arch-list"></div>
   </section>
+
+  <footer class="board-foot">
+    <span>◎ a <b>snapfix</b> loop — every fix clears the tests + the satisfaction bar</span>
+    <a href="https://github.com/shakeebshaan/snapfix" target="_blank" rel="noopener">Clone / contribute ↗</a>
+  </footer>
 </div>
 
 <dialog id="settings">
@@ -367,6 +409,32 @@
       <button class="btn danger" type="button" id="tok-forget">Forget</button>
       <button class="btn" type="button" id="tok-close">Close</button>
       <button class="btn primary" type="button" id="tok-save">Save &amp; test</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="loop-settings">
+  <div class="sheet">
+    <h2>Loop goal</h2>
+    <p>The fix-issues loop posts a fix only when it clears two goals: the app's
+       <b>tests pass</b> (verifiable) and the agent's <b>self-score ≥ the satisfaction
+       bar</b> (LLM-as-judge). Tune the bar live — it's stored in <code>data/loop.json</code>.</p>
+    <div class="slider-row">
+      <div class="slider-head">
+        <label for="sat-range">Satisfaction bar (LLM-as-judge)</label>
+        <span class="val" id="sat-val">80</span>
+      </div>
+      <input type="range" id="sat-range" min="0" max="100" step="5" value="80" />
+      <p style="margin:6px 0 0;font-size:12px;color:var(--muted)" id="sat-hint">Higher = stricter; the agent refactors more before posting. 0 disables the judge gate.</p>
+    </div>
+    <label class="toggle-row">
+      <input type="checkbox" id="gate-tests" checked />
+      <span>Require the app's test suite to pass before a fix can post (verifiable goal)</span>
+    </label>
+    <div class="loop-meta" id="loop-meta"></div>
+    <div class="row">
+      <button class="btn" type="button" id="loop-close">Close</button>
+      <button class="btn primary" type="button" id="loop-save">Save</button>
     </div>
   </div>
 </dialog>
@@ -440,6 +508,9 @@ function resolveConfig() {
     PRIV_REPO: cfg.privateRepo || (repo + "-private"),
     PRIV_BRANCH: cfg.branch || "main",
     TITLE: cfg.title || "QA Board",
+    // Design tokens copied from the app by `snapfix init --auto` (or null).
+    // applyTheme() maps these onto the board's CSS variables at boot.
+    THEME: cfg.theme || null,
   };
 }
 const QA = resolveConfig();
@@ -451,9 +522,34 @@ const privImgCache = new Map(); // path -> data URI | null
 const $ = (id) => document.getElementById(id);
 
 let db = null;          // parsed issues.json
+let loop = null;        // parsed data/loop.json (satisfaction bar + test gate)
+let myLogin = "";       // the connected token's GitHub login (multi-user attribution)
 let token = localStorage.getItem("qaToken") || "";
 let qaReportUrl = localStorage.getItem("qaReportUrl") || "";
 let lastLoad = 0;
+
+/* Default loop settings when data/loop.json is absent (older boards). */
+const LOOP_DEFAULTS = { satisfaction: 80, testGate: true };
+const loopSettings = () => ({ ...LOOP_DEFAULTS, ...(loop || {}) });
+/* Avatar + login chip for any GitHub actor (filed/fixed/answered by). */
+function actorHtml(login, verb) {
+  if (!login) return "";
+  return `<span class="actor"><img src="https://github.com/${esc(login)}.png?size=32" alt="" loading="lazy" />${verb ? esc(verb) + " " : ""}<b>${esc(login)}</b></span>`;
+}
+/* Goal-proof badges on a proposed fix: verifiable (tests/coverage) + judge score. */
+function goalBadgesHtml(fix) {
+  if (!fix) return "";
+  const out = [];
+  if (fix.tests) {
+    out.push(fix.tests.passed
+      ? `<span class="gbadge pass">✓ tests${fix.tests.coverage != null ? " · " + esc(fix.tests.coverage) + "% cov" : ""}</span>`
+      : `<span class="gbadge fail">✗ tests</span>`);
+  }
+  if (fix.judge && Number.isFinite(Number(fix.judge.score))) {
+    out.push(`<span class="gbadge judge" title="${esc(fix.judge.note || "LLM self-score")}">◎ judge ${esc(fix.judge.score)}${fix.judge.bar != null ? " ≥ " + esc(fix.judge.bar) : ""}</span>`);
+  }
+  return out.length ? `<div class="goalbadges">${out.join("")}</div>` : "";
+}
 
 /* ── utils ─────────────────────────────────────────────── */
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -544,6 +640,21 @@ async function loadDb() {
   if (missing) throw new Error("issues.json missing from the repo.");
   return { db: data, sha };
 }
+async function loadLoop() {
+  // Best-effort: older boards have no data/loop.json — fall back to defaults.
+  try {
+    const { data, missing } = await loadJson("data/loop.json");
+    loop = missing || !data ? null : data;
+  } catch { /* leave loop as-is; defaults apply */ }
+  renderLoopChip();
+}
+function renderLoopChip() {
+  const s = loopSettings();
+  const chip = $("chip-loop");
+  if (!chip) return;
+  if (s.satisfaction > 0) { chip.textContent = `◎ judge ≥ ${s.satisfaction}`; chip.classList.remove("off"); }
+  else { chip.textContent = "◎ judge off"; chip.classList.add("off"); }
+}
 async function refresh(silent) {
   if (!silent) renderSkeleton();
   $("banner").classList.remove("show");
@@ -551,6 +662,7 @@ async function refresh(silent) {
     const res = await loadDb();
     db = res.db;
     lastLoad = Date.now();
+    loadLoop();           // fire-and-forget; updates the loop chip when it lands
     render();
   } catch (e) {
     if (db) { toast(e.message); return; }
@@ -628,7 +740,9 @@ function cardHtml(it, archived) {
   const fixPaths = it.fix ? (it.fix.imagePaths || [it.fix.imagePath]) : [];
   const right = it.status === "fixed" && it.fix
     ? `${shotsHtml(fixPaths, fixPaths.map(() => it.fix.imageCommit), "fix screenshot", it.fix?.imagePrivate)}
+       ${goalBadgesHtml(it.fix)}
        <p class="desc">${esc(it.fix.description)}</p>
+       ${it.fix.by ? `<div class="card-tags">${actorHtml(it.fix.by, "fixed by")}</div>` : ""}
        ${prevHtml}
        ${archived ? "" : `<div class="verdict">
          <button class="vbtn resolve" type="button" data-resolve="${esc(it.id)}">✓ Resolve</button>
@@ -660,6 +774,7 @@ function cardHtml(it, archived) {
         <h3>Issue</h3>
         ${shotsHtml(it.imagePaths || [it.imagePath], it.imageCommits || [it.imageCommit], "issue screenshot", it.imagePrivate)}
         <p class="desc">${esc(it.description)}</p>
+        ${it.author ? `<div class="card-tags">${actorHtml(it.author, "filed by")}</div>` : ""}
         ${tagsHtml}
       </div>
       <div class="side">
@@ -860,6 +975,7 @@ $("form").addEventListener("submit", async (ev) => {
       d.issues.push({
         id, createdAt: new Date().toISOString(), route: route || null,
         description: $("desc").value.trim(),
+        author: myLogin || undefined,   // multi-user: who filed it
         imagePath: imagePaths[0], imageCommit: imageCommits[0],
         imagePaths, imageCommits, imagePrivate: true,
         status: "open", fix: null, history: [],
@@ -884,6 +1000,7 @@ function connState(ok, login) {
   const chip = $("chip-conn");
   chip.classList.toggle("on", !!ok);
   $("conn-label").textContent = ok ? login : (token ? "token?" : "connect");
+  myLogin = ok && login ? login : "";   // identity for multi-user attribution
 }
 async function testToken(t) {
   const r = await fetch("https://api.github.com/user", {
@@ -951,6 +1068,55 @@ $("qr-open").addEventListener("click", () => {
   window.open(u, "_blank");
 });
 
+/* ── loop settings (satisfaction bar + test gate) ──────── */
+function syncSatLabel() {
+  const v = parseInt($("sat-range").value, 10);
+  const el = $("sat-val");
+  el.textContent = v === 0 ? "off" : String(v);
+  el.classList.toggle("off", v === 0);
+  $("sat-hint").textContent = v === 0
+    ? "Judge gate disabled — fixes post without a self-score check."
+    : "Higher = stricter; the agent refactors more before posting. 0 disables the judge gate.";
+}
+function openLoop() {
+  const s = loopSettings();
+  $("sat-range").value = String(s.satisfaction);
+  $("gate-tests").checked = s.testGate !== false;
+  syncSatLabel();
+  $("loop-meta").textContent = (loop && loop.updatedBy)
+    ? `Last changed by ${loop.updatedBy}${loop.updatedAt ? " · " + fmtDate(loop.updatedAt) : ""}`
+    : "";
+  $("loop-settings").showModal();
+}
+$("chip-loop").addEventListener("click", openLoop);
+$("sat-range").addEventListener("input", syncSatLabel);
+$("loop-close").addEventListener("click", () => $("loop-settings").close());
+$("loop-save").addEventListener("click", async (ev) => {
+  if (!token) { openSettings("A token is needed to save loop settings."); return; }
+  const btn = ev.currentTarget;
+  const satisfaction = parseInt($("sat-range").value, 10);
+  const testGate = $("gate-tests").checked;
+  btn.disabled = true;
+  try {
+    const saved = await mutateJson("data/loop.json", "loop: update goal settings", (o) => {
+      o.version = o.version || 1;
+      o.satisfaction = satisfaction;
+      o.testGate = testGate;
+      o.updatedAt = new Date().toISOString();
+      o.updatedBy = myLogin || null;
+    }, { version: 1, satisfaction, testGate, updatedAt: null, updatedBy: null });
+    loop = saved;
+    renderLoopChip();
+    render();
+    $("loop-settings").close();
+    toast("Loop goal saved ✓");
+  } catch (e) {
+    toast(e.message || "Couldn't save loop settings.", 4200);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 /* ── lightbox ──────────────────────────────────────────── */
 document.addEventListener("click", (ev) => {
   const b = ev.target.closest(".shot");
@@ -985,6 +1151,7 @@ async function resolveIssue(id, btn) {
     const snap = JSON.parse(JSON.stringify(it));
     snap.status = "resolved";
     snap.resolvedAt = new Date().toISOString();
+    snap.resolvedBy = myLogin || undefined;  // multi-user: who accepted the fix
     snap.archivedAt = snap.resolvedAt; // back-compat with the archive store/sort
     const path = `data/archive-${new Date().getFullYear()}.json`;
     await mutateJson(path, `issue ${id}: resolved`, (a) => {
@@ -1016,7 +1183,7 @@ async function markNotFixed(id, btn) {
       const x = d.issues.find((i) => i.id === id);
       if (!x) return;
       x.history = x.history || [];
-      x.history.push({ at: new Date().toISOString(), event: "reopened", note: note || null, previousFix: x.fix });
+      x.history.push({ at: new Date().toISOString(), event: "reopened", note: note || null, by: myLogin || undefined, previousFix: x.fix });
       x.fix = null;
       x.status = "open";
     });
@@ -1042,6 +1209,7 @@ async function respondReview(id, btn) {
       if (!x) return;
       x.reviewReply = reply;
       x.reviewRepliedAt = new Date().toISOString();
+      x.reviewReplyBy = myLogin || undefined;  // multi-user: who answered
       x.needsReview = false; // unblocked — back in the fix queue with the reply
     });
     render();
@@ -1102,6 +1270,42 @@ document.addEventListener("visibilitychange", () => {
 });
 
 /* ── boot ──────────────────────────────────────────────── */
+// Re-skin the board to the app's design language. snapfix init --auto copies
+// the app's tokens into QA_CONFIG.theme; here we map them onto the board's CSS
+// custom properties (overriding the stylesheet's :root defaults). Best-effort:
+// every field is optional and a missing field leaves the board's own default.
+function applyTheme() {
+  const t = QA.THEME;
+  if (!t || typeof t !== "object") return;
+  const root = document.documentElement;
+  const set = (name, val) => { if (val) root.style.setProperty(name, val); };
+  set("--accent", t.accent);
+  set("--bg", t.bg);
+  set("--card", t.card);
+  set("--ink", t.ink);
+  set("--radius", t.radius);
+  // Derive the soft/ink accent variants the board uses for chips/badges from
+  // the single accent (color-mix is already relied on by the stylesheet).
+  if (t.accent) {
+    root.style.setProperty("--accent-soft", `color-mix(in srgb, ${t.accent} 14%, white)`);
+    root.style.setProperty("--accent-ink", `color-mix(in srgb, ${t.accent} 72%, black)`);
+    const fav = document.querySelector('link[rel="icon"]');
+    if (fav) fav.setAttribute("href",
+      `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='42' fill='${encodeURIComponent(t.accent)}'/%3E%3C/svg%3E`);
+  }
+  // Font: load the app's Google font (if any), then apply the family stack.
+  if (t.googleFontHref && /^https:\/\/fonts\.googleapis\.com\//.test(t.googleFontHref)) {
+    const l = document.createElement("link");
+    l.rel = "stylesheet"; l.href = t.googleFontHref;
+    document.head.appendChild(l);
+  }
+  if (t.fontFamily) document.body.style.fontFamily = t.fontFamily;
+  // Match the mobile status-bar tint to the app's background.
+  if (t.bg) {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", t.bg);
+  }
+}
 // Fill config-driven labels (logo, settings repo, page title).
 function applyConfigLabels() {
   const repoSlug = `${OWNER}/${REPO}`;
@@ -1109,6 +1313,7 @@ function applyConfigLabels() {
   const tokRepo = $("tok-repo-label"); if (tokRepo) tokRepo.textContent = repoSlug;
   document.title = QA.TITLE;
 }
+applyTheme();
 applyConfigLabels();
 (async () => {
   if (token) {

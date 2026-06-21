@@ -7,12 +7,16 @@
     "snapfix": "bin/create.mjs"
   },
   "scripts": {
-    "init": "node bin/create.mjs"
+    "init": "node bin/create.mjs",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage"
   },
   "files": [
     "bin",
     "template",
-    "skill"
+    "skill",
+    "loops",
+    "LOOP.md"
   ],
   "keywords": [
     "qa",

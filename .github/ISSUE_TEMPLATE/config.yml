@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & ideas (Discussions)
+    url: https://github.com/shakeebshaan/snapfix/discussions
+    about: Not sure it's a bug? Want to talk through a loop or ask how something works? Start a Discussion — it's the right place for open-ended questions.

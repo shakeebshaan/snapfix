@@ -1,0 +1,43 @@
+{
+  "_comment": "Example snapfix config for the bundled hello-static demo app. Copy to qa.config.json at your app root (the CLI writes it during `snapfix init`). JSON has no comments, so each section carries a `_comment`. Full docs: README.md > Configuration. This demo is a plain static page with no test suite, so loop.goal.tests.required is false.",
+
+  "board": {
+    "_comment": "The two GitHub repos that back the board. `repo` is the PUBLIC repo (GitHub Pages + issue metadata, no images). `private` is the PRIVATE repo that holds screenshots only — never served, token-gated. `branch` is the branch both repos publish from (Pages source). Replace `owner` with your GitHub username; the CLI fills these in for you.",
+    "owner": "your-github-username",
+    "repo": "hello-static-qa",
+    "private": "hello-static-qa-private",
+    "branch": "main"
+  },
+
+  "app": {
+    "_comment": "The demo application. `repo` is the path to the app relative to this config file (`.` = the copy that lives at your app root, where the skill runs). `devServer` is the local URL the recapture script hits — `npx serve` / most static servers default to port 3000. `viewport` is WIDTHxHEIGHT in CSS px (390x844 = iPhone-sized). `framework` is a hint for the skill (here: a plain static page, no build).",
+    "repo": ".",
+    "devServer": "http://localhost:3000",
+    "viewport": "390x844",
+    "framework": "static"
+  },
+
+  "reproduce": {
+    "_comment": "How proof screenshots are recaptured after a fix. `tool` is the driver (playwright). `recaptureCmd` is run from the board repo; {route} is the issue's route and {out} the output image path. The default points at the bundled recapture.mjs.",
+    "tool": "playwright",
+    "recaptureCmd": "node recapture.mjs {route} {out}"
+  },
+
+  "auth": {
+    "_comment": "How the recapture script reaches authenticated routes. The demo is fully public, so strategy is \"none\" — no login before screenshotting. `tokenKey` / `loginUrl` are unused at strategy \"none\" but kept for shape parity with the full config.",
+    "strategy": "none",
+    "tokenKey": "access_token",
+    "loginUrl": "/"
+  },
+
+  "loop": {
+    "_comment": "The fix-issues loop = trigger + goal (see LOOP.md). `trigger`: manual | schedule | action. `goal.satisfaction` is the LLM-as-judge bar (0-100) a fix must clear to post — the board's slider overrides it live via data/loop.json. `goal.tests` is the verifiable gate: this static demo has no test suite, so `required` is false (the loop skips the test gate and relies on the satisfaction judge alone).",
+    "trigger": "manual",
+    "schedule": { "cron": "0 9 * * *", "agentCmd": "claude -p \"/fix-issues\"" },
+    "action": { "on": "new-issue", "pollSeconds": 60 },
+    "goal": {
+      "satisfaction": 80,
+      "tests": { "required": false, "command": "npm test", "coverage": 0 }
+    }
+  }
+}

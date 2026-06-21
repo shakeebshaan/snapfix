@@ -40,6 +40,7 @@ function findConfigPath() {
   return null;
 }
 
+let FULL_CFG = null; // the whole parsed qa.config.json (loop settings live here too)
 function loadConfig() {
   const path = findConfigPath();
   if (!path) {
@@ -57,6 +58,7 @@ function loadConfig() {
     console.error("ERROR: qa.config.json is not valid JSON (" + path + "):\n  " + e.message);
     process.exit(1);
   }
+  FULL_CFG = cfg;
   const board = cfg && cfg.board;
   if (!board || !board.owner || !board.repo || !board.private) {
     console.error(
@@ -69,7 +71,41 @@ function loadConfig() {
   return board;
 }
 
-const board = loadConfig();
+// SNAPFIX_NO_MAIN keeps the module inert on import (no config load, no CLI
+// dispatch) so pure helpers — buildPullEntry — can be unit-tested. Matches the
+// guard in loop.mjs / create.mjs.
+const board = process.env.SNAPFIX_NO_MAIN ? {} : loadConfig();
+
+// The fix-issues loop's goal settings (see LOOP.md). Live values from the board
+// repo's data/loop.json (the satisfaction slider's target) override the static
+// qa.config.json loop.goal defaults.
+function loopSettings() {
+  const goal = (FULL_CFG && FULL_CFG.loop && FULL_CFG.loop.goal) || {};
+  const tests = goal.tests || {};
+  let satisfaction = Number.isFinite(Number(goal.satisfaction)) ? Number(goal.satisfaction) : 80;
+  let testGate = tests.required !== false;
+  const testCommand = tests.command || "npm test";
+  const coverage = Number(tests.coverage) || 0;
+  const loopPath = join(ROOT, "data", "loop.json");
+  if (existsSync(loopPath)) {
+    try {
+      const live = JSON.parse(readFileSync(loopPath, "utf8"));
+      if (Number.isFinite(Number(live.satisfaction))) satisfaction = Number(live.satisfaction);
+      if (typeof live.testGate === "boolean") testGate = live.testGate;
+    } catch { /* fall back to config defaults */ }
+  }
+  return { satisfaction, testGate, testCommand, coverage };
+}
+
+// The acting GitHub identity (multi-user attribution). Uses the same gh CLI
+// session every other CLI call rides on. Cached; null if it can't be read.
+let _login;
+function ghLogin() {
+  if (_login !== undefined) return _login;
+  const r = spawnSync("gh", ["api", "user", "--jq", ".login"], { encoding: "utf8" });
+  _login = r.status === 0 && r.stdout ? r.stdout.trim() : null;
+  return _login;
+}
 const OWNER_REPO = `${board.owner}/${board.repo}`;
 const PRIV_OWNER = board.owner, PRIV_REPO = board.private;
 const BRANCH = board.branch || "main";
@@ -137,8 +173,38 @@ const allFlag = (name) => {
 };
 const rawUrl = (path, commit) => `https://raw.githubusercontent.com/${OWNER_REPO}/${commit || BRANCH}/${path}`;
 
+// Map one open issue → its `pull` manifest entry. Image-less issues (e.g. the
+// [snapfix demo] seed: imagePaths:[], imagePath:null) MUST NOT blow up — guard
+// the paths so we never join(ROOT, null) / extname(null), which would abort the
+// whole pull (and so the --auto demo). `dl(privPath, idx)` downloads a private
+// image to a local path (or returns null). Pure + exported for unit testing.
+function buildPullEntry(i, root, dl) {
+  const paths = (Array.isArray(i.imagePaths) && i.imagePaths.length)
+    ? i.imagePaths
+    : (i.imagePath ? [i.imagePath] : []);
+  const images = i.imagePrivate
+    ? paths.map((p, idx) => dl(p, idx)).filter(Boolean)
+    : paths.map((p) => join(root, p));
+  return {
+    id: i.id,
+    createdAt: i.createdAt,
+    route: i.route,
+    description: i.description,
+    imagePrivate: !!i.imagePrivate,
+    image: images[0] || null,
+    images,
+    reopenNote: (i.history || []).filter((h) => h.event === "reopened").slice(-1)[0]?.note || null,
+    needsReview: !!i.needsReview,
+    reviewReason: i.reviewReason || null,
+    reviewReply: i.reviewReply || null,
+    author: i.author || null,              // who filed it (multi-user)
+    tags: i.tags || null,
+  };
+}
+
 const [, , cmd, idArg] = process.argv;
 
+if (!process.env.SNAPFIX_NO_MAIN) {
 try {
   if (cmd === "list") {
     git("pull", "--rebase", "origin", BRANCH);
@@ -159,50 +225,58 @@ try {
     const open = db.issues
       .filter((i) => i.status === "open")
       .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""))
-      .map((i) => {
-        const paths = i.imagePaths || [i.imagePath];
-        let image, images;
-        if (i.imagePrivate) {
-          // Download private images locally so Claude can read them
-          const dlDir = join(ROOT, "tmp", "downloads", i.id);
-          mkdirSync(dlDir, { recursive: true });
-          images = paths.map((p, idx) => {
-            const ext = extname(p) || ".jpg";
-            const localPath = join(dlDir, `img-${idx}${ext}`);
-            return downloadPrivImage(p, localPath);
-          }).filter(Boolean);
-          image = images[0] || null;
-        } else {
-          image = join(ROOT, i.imagePath);
-          images = paths.map((p) => join(ROOT, p));
-        }
-        return {
-          id: i.id,
-          createdAt: i.createdAt,
-          route: i.route,
-          description: i.description,
-          imagePrivate: !!i.imagePrivate,
-          image,
-          images,
-          reopenNote: (i.history || []).filter((h) => h.event === "reopened").slice(-1)[0]?.note || null,
-          needsReview: !!i.needsReview,
-          reviewReason: i.reviewReason || null,
-          reviewReply: i.reviewReply || null,
-          tags: i.tags || null,
-        };
-      });
-    console.log(JSON.stringify({ open, count: open.length }, null, 2));
+      .map((i) => buildPullEntry(i, ROOT, (p, idx) => {
+        // Download private images locally so Claude can read them.
+        const dlDir = join(ROOT, "tmp", "downloads", i.id);
+        mkdirSync(dlDir, { recursive: true });
+        const ext = extname(p) || ".jpg";
+        return downloadPrivImage(p, join(dlDir, `img-${idx}${ext}`));
+      }));
+    // The loop's live goal — the agent reads the satisfaction bar + test gate
+    // from here so it knows the bar it must clear before resolving (LOOP.md).
+    console.log(JSON.stringify({ open, count: open.length, loop: loopSettings() }, null, 2));
   } else if (cmd === "resolve") {
     // Multiple --image flags supported: a fix that spans two screens / scroll
     // positions can submit 2+ fix images (shown side-by-side on the board).
     const id = idArg, images = allFlag("image"), desc = flag("desc"), appCommit = flag("app-commit");
-    if (!id || images.length === 0 || !desc) throw new Error('Usage: resolve <id> --image <absPath> [--image <absPath2> …] --desc "<text>" [--app-commit <sha>]');
+    const tests = flag("tests"), coverageArg = flag("coverage"), judgeArg = flag("judge"), judgeNote = flag("judge-note");
+    if (!id || images.length === 0 || !desc) throw new Error('Usage: resolve <id> --image <absPath> [--image <absPath2> …] --desc "<text>" [--app-commit <sha>] [--tests pass|fail] [--coverage <n>] [--judge <0-100>] [--judge-note "<why>"]');
     for (const img of images) if (!existsSync(img)) throw new Error("Image not found: " + img);
     git("pull", "--rebase", "origin", BRANCH);
     const db = loadDb();
     const issue = db.issues.find((i) => i.id === id);
     if (!issue) throw new Error("No such issue: " + id);
     if (issue.status === "fixed") throw new Error(id + " is already fixed.");
+
+    // ── GOAL GATES (see LOOP.md) — enforced BEFORE any upload, so a fix that
+    // can't clear the bar never reaches the board and no image is wasted. ──
+    const settings = loopSettings();
+    // Verifiable goal: the app's tests must be confirmed passing.
+    if (settings.testGate && tests !== "pass") {
+      throw new Error(
+        "Verifiable goal not met: app tests are not confirmed passing.\n" +
+        "  Run `node tools/loop.mjs verify` in the app repo, and once green resolve with --tests pass.\n" +
+        "  (Turn the test gate off on the board — set data/loop.json testGate=false — to skip this.)"
+      );
+    }
+    // LLM-as-judge goal: a positive satisfaction bar requires a self-score ≥ bar.
+    if (settings.satisfaction > 0) {
+      if (judgeArg === undefined) {
+        throw new Error(
+          "LLM-as-judge goal is on (satisfaction bar " + settings.satisfaction + "/100).\n" +
+          '  Self-score this fix and resolve with --judge <0-100> (and optionally --judge-note "<why>").\n' +
+          "  Move the board's satisfaction slider to 0 to disable the judge gate."
+        );
+      }
+      const score = Number(judgeArg);
+      if (!Number.isFinite(score) || score < 0 || score > 100) throw new Error("--judge must be a number 0–100.");
+      if (score < settings.satisfaction) {
+        throw new Error(
+          "LLM-as-judge goal not met: self-score " + score + " < satisfaction bar " + settings.satisfaction + ".\n" +
+          "  Keep refactoring until satisfied, then re-score — or lower the bar on the board."
+        );
+      }
+    }
 
     // Upload all fix screenshots to private repo via gh API.
     // First image keeps the canonical name (backward-compat); extras get -2, -3...
@@ -225,7 +299,12 @@ try {
       imageCommit: imageCommits[0],
       imageCommits,
       fixedAt: new Date().toISOString(),
+      by: ghLogin() || undefined,                 // multi-user attribution
       ...(appCommit ? { appCommit } : {}),
+      // Verifiable-goal proof (shown as a ✓ tests/coverage badge on the card).
+      ...(tests ? { tests: { passed: tests === "pass", ...(coverageArg !== undefined ? { coverage: Number(coverageArg) } : {}) } } : {}),
+      // LLM-as-judge proof (the self-score that cleared the satisfaction bar).
+      ...(judgeArg !== undefined ? { judge: { score: Number(judgeArg), bar: settings.satisfaction, ...(judgeNote ? { note: judgeNote } : {}) } } : {}),
     };
     issue.status = "fixed";
     // A fix clears any pending user-review flag.
@@ -247,7 +326,7 @@ try {
     if (!issue) throw new Error("No such issue: " + id);
     if (issue.status !== "fixed") throw new Error(id + " is not fixed — nothing to reopen.");
     issue.history = issue.history || [];
-    issue.history.push({ at: new Date().toISOString(), event: "reopened", note, previousFix: issue.fix });
+    issue.history.push({ at: new Date().toISOString(), event: "reopened", note, by: ghLogin() || undefined, previousFix: issue.fix });
     issue.fix = null;
     issue.status = "open";
     saveDb(db);
@@ -268,6 +347,7 @@ try {
     issue.needsReview = true;
     issue.reviewReason = reason;
     issue.reviewedAt = new Date().toISOString();
+    issue.reviewedBy = ghLogin() || undefined;
     if (tagsRaw) {
       issue.tags = tagsRaw.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
     }
@@ -320,10 +400,13 @@ try {
     gitPush();
     console.log(`Archived ${targets.length} -> data/archive-${year}.json`);
   } else {
-    console.log("Commands: list [--all] | pull | resolve <id> --image <p> [--image <p2>] --desc <t> [--app-commit <sha>] | review <id> --reason <t> [--tags a,b] | unreview <id> | reopen <id> --note <t> | archive <id> | archive --all-fixed");
+    console.log("Commands: list [--all] | pull | resolve <id> --image <p> [--image <p2>] --desc <t> [--app-commit <sha>] [--tests pass|fail] [--coverage <n>] [--judge <0-100>] [--judge-note <t>] | review <id> --reason <t> [--tags a,b] | unreview <id> | reopen <id> --note <t> | archive <id> | archive --all-fixed");
     process.exit(cmd ? 1 : 0);
   }
 } catch (e) {
   console.error("ERROR: " + e.message);
   process.exit(1);
 }
+}
+
+export { buildPullEntry };
