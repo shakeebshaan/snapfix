@@ -91,7 +91,8 @@ node <board path>/tools/qa.mjs pull
     "id": "...", "createdAt": "...", "route": "/some/route", "description": "...",
     "imagePrivate": true, "image": "<abs path>", "images": ["<abs path>", ...],
     "reopenNote": "...|null", "needsReview": false, "reviewReason": "...|null",
-    "reviewReply": "...|null", "author": "octocat|null", "tags": ["..."]|null
+    "reviewReply": "...|null", "reviewReplyImages": ["<abs path>", ...],
+    "author": "octocat|null", "tags": ["..."]|null
   } ],
   "count": 1,
   "loop": { "satisfaction": 80, "testGate": true, "testCommand": "npm test", "coverage": 0 }
@@ -141,7 +142,8 @@ For each issue in the manifest, in `createdAt` order:
 
 1. **Read the inputs.** Read every path in `images[]` and read `description`, `route`,
    `reopenNote` (why a prior fix was rejected) and `reviewReply` (owner's answer to a
-   prior needs-review). These notes are direction; honor them.
+   prior needs-review) — including every path in `reviewReplyImages[]`, the
+   screenshots the owner attached to that answer. These notes are direction; honor them.
 
 2. **Reproduce.** Set the viewport to `app.viewport`, navigate to `app.devServer` +
    `route`, and confirm the reported problem. If `route` is null/wrong, infer it.
@@ -230,9 +232,10 @@ This floats the issue to the top with a **"User review"** card. Then move on to 
 issues — never stall the whole loop on one blocker.
 
 **Human → you (their reply).** The human acts on the card:
-- **Respond** → records `reviewReply` (and who replied) and clears `needsReview`, putting
-  the issue back in the open queue *with their answer*. Next loop tick you read
-  `reviewReply` and proceed using it as direction.
+- **Respond** → records `reviewReply` (and who replied, and any screenshots they
+  attached → `reviewReplyImages`) and clears `needsReview`, putting the issue back in
+  the open queue *with their answer*. Next loop tick you read `reviewReply` + view
+  `reviewReplyImages` and proceed using them as direction.
 - **Resolve** → accepts the current state and moves the issue to the resolved archive.
   This is how a *proposed fix* becomes *done* — not done until the human taps Resolve.
 - **Reject** ("not fixed") → back to the open queue with an optional `reopenNote`; the
