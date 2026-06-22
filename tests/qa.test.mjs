@@ -54,6 +54,30 @@ test("buildPullEntry: private image-less issue does not call dl and does not thr
   assert.equal(e.image, null);
 });
 
+test("buildPullEntry: surfaces the owner's response images (kind=reply)", () => {
+  const calls = [];
+  const e = buildPullEntry(
+    {
+      id: "r", imagePaths: ["images/r.jpg"], imagePrivate: true,
+      reviewReply: "see the attached annotation",
+      reviewReplyImagePaths: ["images/r-reply.jpg"], reviewReplyImagePrivate: true,
+    },
+    "/board",
+    (p, idx, kind) => { calls.push([p, idx, kind]); return `/local/${kind}-${idx}.jpg`; },
+  );
+  assert.deepEqual(e.images, ["/local/issue-0.jpg"]);          // issue shot tagged "issue"
+  assert.deepEqual(e.reviewReplyImages, ["/local/reply-0.jpg"]); // reply shot tagged "reply"
+  assert.equal(e.reviewReply, "see the attached annotation");
+  assert.ok(calls.some((c) => c[2] === "issue"));
+  assert.ok(calls.some((c) => c[2] === "reply"));
+});
+
+test("buildPullEntry: no response images → reviewReplyImages is [] (never throws)", () => {
+  const e = buildPullEntry({ id: "n", imagePaths: [], imagePrivate: false }, "/board", () => null);
+  assert.deepEqual(e.reviewReplyImages, []);
+  assert.equal(e.reviewReply, null);
+});
+
 test("buildPullEntry: carries through metadata fields", () => {
   const e = buildPullEntry({
     id: "m", createdAt: "t", route: "/r", description: "d", imagePrivate: false,

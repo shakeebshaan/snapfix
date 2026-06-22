@@ -240,6 +240,11 @@
   }
   .await .w { font-size: 26px; display: block; margin-bottom: 8px; opacity: .55; }
   .reopen-note { margin: 0 0 10px; font-size: 13px; color: hsl(0 55% 40%); background: hsl(0 80% 96%); border-radius: 10px; padding: 8px 12px; }
+  /* Owner's response to a review (text + optional attached screenshot). */
+  .response-note { margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink); font-size: 13px; line-height: 1.45; }
+  .response-note > b { display: block; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 5px; }
+  .response-note p { margin: 0 0 8px; white-space: pre-wrap; word-break: break-word; }
+  .response-note .shot, .response-note .shots-grid { margin-top: 4px; }
 
   /* ── Add form ───────────────────────────────────────── */
   #add {
@@ -435,6 +440,31 @@
     <div class="row">
       <button class="btn" type="button" id="loop-close">Close</button>
       <button class="btn primary" type="button" id="loop-save">Save</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="respond-dialog">
+  <div class="sheet">
+    <h2>Respond to Claude</h2>
+    <p id="respond-q">Send Claude your direction or an answer.</p>
+    <form id="respond-form">
+      <div id="reply-thumbs" hidden>
+        <div class="thumb-grid" id="reply-thumb-grid"></div>
+        <div class="thumbs-footer"><button type="button" class="clear-all-btn" id="reply-clear-all">Remove all</button></div>
+      </div>
+      <label class="pick add-more" id="reply-pick">
+        <input type="file" id="reply-file" accept="image/*" multiple hidden />
+        <span id="reply-pick-inner">📎 &nbsp;Attach a screenshot<span class="hint">optional · tap to pick · or paste (Ctrl+V)</span></span>
+      </label>
+      <div class="field">
+        <label for="reply-text">Your response</label>
+        <textarea id="reply-text" placeholder="Answer Claude's question, or give direction…" required></textarea>
+      </div>
+    </form>
+    <div class="row">
+      <button class="btn" type="button" id="respond-cancel">Cancel</button>
+      <button class="btn primary" type="button" id="respond-save">Send response</button>
     </div>
   </div>
 </dialog>
@@ -737,6 +767,15 @@ function cardHtml(it, archived) {
       }</details>`
     : "";
 
+  // The owner's response to a review (text + any attached screenshots). Shown
+  // whenever a reply exists — on the review card and the awaiting-fix card.
+  const replyPaths = it.reviewReplyImagePaths || [];
+  const responseHtml = it.reviewReply
+    ? `<div class="response-note"><b>Your response</b><p>${esc(it.reviewReply)}</p>${
+        replyPaths.length ? shotsHtml(replyPaths, it.reviewReplyImageCommits, "response screenshot", it.reviewReplyImagePrivate) : ""
+      }${it.reviewReplyBy ? `<div class="card-tags">${actorHtml(it.reviewReplyBy, "answered by")}</div>` : ""}</div>`
+    : "";
+
   const fixPaths = it.fix ? (it.fix.imagePaths || [it.fix.imagePath]) : [];
   const right = it.status === "fixed" && it.fix
     ? `${shotsHtml(fixPaths, fixPaths.map(() => it.fix.imageCommit), "fix screenshot", it.fix?.imagePrivate)}
@@ -750,7 +789,7 @@ function cardHtml(it, archived) {
        </div>`}`
     : needsReview
       ? `<p class="review-note"><b>Needs your review.</b> ${esc(it.reviewReason || "Blocked — see notes.")}</p>
-         ${it.reviewReply ? `<p class="reopen-note">↳ you: ${esc(it.reviewReply)}</p>` : ""}
+         ${responseHtml}
          ${prevHtml}
          ${archived ? "" : `<div class="verdict">
            <button class="vbtn respond" type="button" data-respond="${esc(it.id)}">↩ Respond</button>
@@ -758,6 +797,7 @@ function cardHtml(it, archived) {
          </div>`}`
       : `${lastReopen?.note ? `<p class="reopen-note">↻ ${esc(lastReopen.note)}</p>` : ""}
        <div class="await"><span><span class="w">🔧</span>${reopened ? "Awaiting re-fix" : "Awaiting fix"}<br><span style="font-size:12px;opacity:.7">Claude will post the ${reopened ? "re-" : ""}fixed screenshot here</span></span></div>
+       ${responseHtml}
        ${prevHtml}`;
   const tags = tagsFor(it);
   const tagsHtml = tags.length
@@ -925,8 +965,10 @@ $("file").addEventListener("change", () => {
 });
 
 document.addEventListener("paste", (ev) => {
+  // Route a pasted image to the response dialog when it's open, else the add form.
+  const toReply = $("respond-dialog").open;
   for (const item of (ev.clipboardData?.items || [])) {
-    if (item.type.startsWith("image/")) addPickedFile(item.getAsFile());
+    if (item.type.startsWith("image/")) (toReply ? addReplyFile : addPickedFile)(item.getAsFile());
   }
 });
 
@@ -1194,38 +1236,112 @@ async function markNotFixed(id, btn) {
     toast(e.message || "Couldn't send back.", 4200);
   }
 }
-// Owner answers a user-review item: records the reply, clears the review flag
-// so the next loop tick acts on it with the reply as direction/context.
-async function respondReview(id, btn) {
+// Owner answers a user-review item via the response dialog: a text reply plus
+// optional attached screenshots (uploaded to the PRIVATE repo, like issue
+// shots). Saving records the reply + image paths and clears the review flag so
+// the next loop tick acts on it with the reply (and images) as direction.
+let replyFiles = [];          // images attached to the in-progress response
+let respondTargetId = null;   // issue id the dialog is editing
+
+function renderReplyZone() {
+  const has = replyFiles.length > 0;
+  $("reply-thumbs").hidden = !has;
+  if (has) {
+    $("reply-thumb-grid").innerHTML = replyFiles.map((f, i) => {
+      const url = URL.createObjectURL(f);
+      return `<div class="thumb"><img src="${url}" alt="response preview ${i + 1}" /><button class="rm-img" type="button" data-ridx="${i}" aria-label="Remove image ${i + 1}">✕</button></div>`;
+    }).join("");
+    $("reply-pick-inner").innerHTML = `➕ &nbsp;Add another screenshot<span class="hint">tap · paste (Ctrl+V)</span>`;
+  } else {
+    $("reply-pick-inner").innerHTML = `📎 &nbsp;Attach a screenshot<span class="hint">optional · tap to pick · or paste (Ctrl+V)</span>`;
+  }
+}
+function addReplyFile(f) {
+  if (!f || !f.type.startsWith("image/")) return;
+  replyFiles.push(f);
+  renderReplyZone();
+}
+$("reply-file").addEventListener("change", () => {
+  for (const f of $("reply-file").files) addReplyFile(f);
+  $("reply-file").value = "";
+});
+$("reply-thumb-grid").addEventListener("click", (ev) => {
+  const b = ev.target.closest(".rm-img");
+  if (!b) return;
+  ev.preventDefault();
+  replyFiles.splice(parseInt(b.dataset.ridx, 10), 1);
+  renderReplyZone();
+});
+$("reply-clear-all").addEventListener("click", () => { replyFiles = []; renderReplyZone(); });
+
+function openRespond(id) {
   const it = (db?.issues || []).find((i) => i.id === id);
-  if (!it || !it.needsReview) return;
+  if (!it) return;
   if (!token) { openSettings("A token is needed to respond."); return; }
-  const reply = (prompt("Your response — decision or what you've provided (Claude reads this and proceeds):", it.reviewReply || "") || "").trim();
-  if (!reply) return;
+  respondTargetId = id;
+  replyFiles = [];
+  $("reply-text").value = it.reviewReply || "";
+  $("respond-q").textContent = it.reviewReason
+    ? `Claude asked: ${it.reviewReason}`
+    : "Send Claude your direction or an answer.";
+  renderReplyZone();
+  $("respond-dialog").showModal();
+  $("reply-text").focus();
+}
+$("respond-cancel").addEventListener("click", () => $("respond-dialog").close());
+$("respond-save").addEventListener("click", async (ev) => {
+  const id = respondTargetId;
+  const reply = $("reply-text").value.trim();
+  if (!reply) { toast("Write a response first."); $("reply-text").focus(); return; }
+  if (!token) { openSettings("A token is needed to respond."); return; }
+  const btn = ev.currentTarget;
+  const label = btn.textContent;
   btn.disabled = true;
   try {
+    // Attached images → PRIVATE repo (never public), exactly like issue shots.
+    const replyPaths = [], replyCommits = [];
+    for (let i = 0; i < replyFiles.length; i++) {
+      btn.textContent = `Uploading ${i + 1}/${replyFiles.length}…`;
+      const blob = await compress(replyFiles[i]);
+      const b64 = await blobToB64(blob);
+      if (b64.length > 5_000_000) throw new Error(`Image ${i + 1} too large even after compression.`);
+      const suffix = replyFiles.length > 1 ? `-${i}` : "";
+      const res = await putPrivFile(`images/${id}-reply${suffix}.jpg`, b64, `issue ${id}: response image ${i + 1}`);
+      replyPaths.push(`images/${id}-reply${suffix}.jpg`);
+      replyCommits.push(res.commit?.sha || "");
+    }
+    btn.textContent = "Saving…";
     await mutateIssues(`issue ${id}: owner responded to review`, (d) => {
       const x = d.issues.find((i) => i.id === id);
       if (!x) return;
       x.reviewReply = reply;
       x.reviewRepliedAt = new Date().toISOString();
-      x.reviewReplyBy = myLogin || undefined;  // multi-user: who answered
-      x.needsReview = false; // unblocked — back in the fix queue with the reply
+      x.reviewReplyBy = myLogin || undefined;   // multi-user: who answered
+      if (replyPaths.length) {
+        x.reviewReplyImagePaths = replyPaths;
+        x.reviewReplyImageCommits = replyCommits;
+        x.reviewReplyImagePrivate = true;
+      }
+      x.needsReview = false;                     // unblocked — back in the fix queue
     });
+    replyFiles = [];
     render();
+    $("respond-dialog").close();
     toast("Response saved — back to Claude ✓");
   } catch (e) {
-    btn.disabled = false;
     toast(e.message || "Couldn't save response.", 4200);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = label;
   }
-}
+});
 document.addEventListener("click", (ev) => {
   const r = ev.target.closest("[data-resolve]");
   if (r) { resolveIssue(r.dataset.resolve, r); return; }
   const n = ev.target.closest("[data-notfixed]");
   if (n) { markNotFixed(n.dataset.notfixed, n); return; }
   const p = ev.target.closest("[data-respond]");
-  if (p) { respondReview(p.dataset.respond, p); return; }
+  if (p) { openRespond(p.dataset.respond); return; }
 });
 // Tag filter chips — toggle the active tag and re-render (data-tag="" = All).
 $("tagbar").addEventListener("click", (ev) => {

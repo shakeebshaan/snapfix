@@ -179,12 +179,20 @@ const rawUrl = (path, commit) => `https://raw.githubusercontent.com/${OWNER_REPO
 // whole pull (and so the --auto demo). `dl(privPath, idx)` downloads a private
 // image to a local path (or returns null). Pure + exported for unit testing.
 function buildPullEntry(i, root, dl) {
-  const paths = (Array.isArray(i.imagePaths) && i.imagePaths.length)
+  // Resolve a set of image paths to readable locations. Private images go
+  // through `dl(privPath, idx, kind)` (downloaded locally); public ones are
+  // joined under root. `kind` ("issue" | "reply") lets the caller name files.
+  const toImages = (paths, priv, kind) => {
+    const ps = (Array.isArray(paths) && paths.length) ? paths : [];
+    return priv ? ps.map((p, idx) => dl(p, idx, kind)).filter(Boolean) : ps.map((p) => join(root, p));
+  };
+  const issuePaths = (Array.isArray(i.imagePaths) && i.imagePaths.length)
     ? i.imagePaths
     : (i.imagePath ? [i.imagePath] : []);
-  const images = i.imagePrivate
-    ? paths.map((p, idx) => dl(p, idx)).filter(Boolean)
-    : paths.map((p) => join(root, p));
+  const images = toImages(issuePaths, i.imagePrivate, "issue");
+  // The owner's response screenshots (uploaded private, like issue shots) so the
+  // agent can SEE the attached direction, not just read the reviewReply text.
+  const reviewReplyImages = toImages(i.reviewReplyImagePaths, i.reviewReplyImagePrivate, "reply");
   return {
     id: i.id,
     createdAt: i.createdAt,
@@ -197,6 +205,7 @@ function buildPullEntry(i, root, dl) {
     needsReview: !!i.needsReview,
     reviewReason: i.reviewReason || null,
     reviewReply: i.reviewReply || null,
+    reviewReplyImages,                     // owner's attached response screenshots (local paths)
     author: i.author || null,              // who filed it (multi-user)
     tags: i.tags || null,
   };
@@ -225,12 +234,14 @@ try {
     const open = db.issues
       .filter((i) => i.status === "open")
       .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""))
-      .map((i) => buildPullEntry(i, ROOT, (p, idx) => {
-        // Download private images locally so Claude can read them.
+      .map((i) => buildPullEntry(i, ROOT, (p, idx, kind = "issue") => {
+        // Download private images locally so Claude can read them. `kind`
+        // separates issue shots (img-N) from response shots (reply-N).
         const dlDir = join(ROOT, "tmp", "downloads", i.id);
         mkdirSync(dlDir, { recursive: true });
         const ext = extname(p) || ".jpg";
-        return downloadPrivImage(p, join(dlDir, `img-${idx}${ext}`));
+        const name = (kind === "reply" ? "reply-" : "img-") + idx + ext;
+        return downloadPrivImage(p, join(dlDir, name));
       }));
     // The loop's live goal — the agent reads the satisfaction bar + test gate
     // from here so it knows the bar it must clear before resolving (LOOP.md).
