@@ -13,6 +13,8 @@ cycle. The screenshot-to-AI-fix QA board is now its flagship loop.
 
 ### Added
 
+- **Board: edit a submitted response** — an inline ✎ Edit on the response note re-opens the respond composer pre-filled, so the owner can revise their answer to Claude any time (even while the issue is awaiting re-fix), not just on first reply.
+- **Board: review-reason text wraps** — long review reasons (URLs, SHA fingerprints, multi-line) no longer clip at the card edge (`white-space: pre-wrap; overflow-wrap; word-break`).
 - **One-line autonomous setup** (`snapfix init --auto`) — reads the target project and, in a single command: **copies the app's design language** (accent/bg/ink/radius/font tokens) onto the board, **recommends project-relevant loops** from the Loop Library (→ `RECOMMENDED-LOOPS.md` + `loops/`), **auto-tunes** the loop (trigger, **tick duration**, satisfaction bar) from detected signals, installs the **fix-issues + caveman** skills, **seeds a `[snapfix demo]` test issue**, and runs the fix-issues loop once to fix it. `--tick`, `--trigger`, and `--no-fix` refine it; `--auto` implies `--yes`.
 - **Design-language copy** — `bin/lib/theme.mjs` extracts CSS custom properties / Tailwind tokens / Google font from the app; the board's `applyTheme()` maps them onto its CSS variables so the board matches the app.
 - **Project-relevant loop selection** — `bin/lib/loops.mjs` builds the catalog from `loops/` and selects loops by project signals (web, tests, CI, design tokens, docs).

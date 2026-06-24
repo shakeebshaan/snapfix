@@ -123,6 +123,8 @@
     margin: 10px 0 0; padding: 10px 12px; border-radius: 10px;
     background: hsl(263 60% 96%); border: 1px solid hsl(263 50% 88%);
     color: hsl(263 40% 32%); font-size: 13px; line-height: 1.45;
+    /* Long review reasons (URLs, fingerprints, multi-line) must wrap, not clip. */
+    white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
   }
   .review-note b { color: hsl(263 50% 38%); }
   /* Tag filter bar + per-card tag chips */
@@ -244,6 +246,10 @@
   .response-note { margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink); font-size: 13px; line-height: 1.45; }
   .response-note > b { display: block; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 5px; }
   .response-note p { margin: 0 0 8px; white-space: pre-wrap; word-break: break-word; }
+  /* Inline "Edit" affordance — lets the owner revise a submitted response any
+     time, even while the issue is awaiting (re-)fix. */
+  .resp-edit { float: right; margin-top: -2px; font-size: 11px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--accent-ink); background: transparent; border: 1px solid var(--line); border-radius: 7px; padding: 2px 8px; cursor: pointer; }
+  .resp-edit:hover { background: var(--accent-soft); }
   .response-note .shot, .response-note .shots-grid { margin-top: 4px; }
 
   /* ── Add form ───────────────────────────────────────── */
@@ -771,7 +777,7 @@ function cardHtml(it, archived) {
   // whenever a reply exists — on the review card and the awaiting-fix card.
   const replyPaths = it.reviewReplyImagePaths || [];
   const responseHtml = it.reviewReply
-    ? `<div class="response-note"><b>Your response</b><p>${esc(it.reviewReply)}</p>${
+    ? `<div class="response-note"><b>Your response${archived ? "" : ` <button type="button" class="resp-edit" data-respond="${esc(it.id)}" aria-label="Edit your response">✎ Edit</button>`}</b><p>${esc(it.reviewReply)}</p>${
         replyPaths.length ? shotsHtml(replyPaths, it.reviewReplyImageCommits, "response screenshot", it.reviewReplyImagePrivate) : ""
       }${it.reviewReplyBy ? `<div class="card-tags">${actorHtml(it.reviewReplyBy, "answered by")}</div>` : ""}</div>`
     : "";
