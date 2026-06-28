@@ -123,7 +123,9 @@
     margin: 10px 0 0; padding: 10px 12px; border-radius: 10px;
     background: hsl(263 60% 96%); border: 1px solid hsl(263 50% 88%);
     color: hsl(263 40% 32%); font-size: 13px; line-height: 1.45;
-    /* Long review reasons (URLs, fingerprints, multi-line) must wrap, not clip. */
+    /* d1cf: long review reasons (URLs, SHA-1 fingerprints, multi-line) were
+       clipped at the right edge. Match .desc/.response-note: preserve newlines
+       and hard-wrap unbreakable tokens so nothing is cut off. */
     white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
   }
   .review-note b { color: hsl(263 50% 38%); }
@@ -204,6 +206,17 @@
     cursor: pointer; padding: 10px 16px; min-height: 44px;
   }
   .linkbtn:active { opacity: .6; }
+  /* Clickable report/external link on a card (e.g. daily-ops report page) */
+  .report-cta {
+    display: inline-flex; align-items: center; gap: 7px; margin: 10px 0 2px;
+    padding: 10px 16px; min-height: 44px; border-radius: 10px;
+    background: var(--accent-soft); color: var(--accent-ink);
+    font-size: 13.5px; font-weight: 700; text-decoration: none;
+    border: 1px solid transparent;
+  }
+  .report-cta:hover { border-color: var(--accent); }
+  .report-cta:active { opacity: .7; }
+  .report-cta .arr { font-size: 15px; line-height: 1; }
   #arch h2 {
     font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
     color: var(--muted); margin: 18px 2px 12px;
@@ -235,6 +248,17 @@
   }
   .shot img { width: 100%; height: 100%; object-fit: contain; display: block; }
   .desc { margin: 10px 2px 0; font-size: 14.5px; white-space: pre-wrap; word-break: break-word; }
+  /* 831e: structured description — step list + option radios */
+  .desc-steps { margin: 8px 2px 0; padding-left: 22px; font-size: 13.5px; line-height: 1.5; color: var(--ink); }
+  .desc-steps li { margin: 6px 0; padding-left: 3px; }
+  .desc-steps li::marker { color: var(--accent-ink); font-weight: 700; }
+  .desc-opts { display: flex; flex-direction: column; gap: 8px; margin: 12px 2px 0; }
+  .opt-radio { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px; cursor: pointer; font-size: 13.5px; line-height: 1.45; background: var(--card); transition: border-color .15s, background .15s; }
+  .opt-radio:hover { border-color: var(--accent); }
+  .opt-radio:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+  .opt-radio input { margin-top: 3px; width: 17px; height: 17px; accent-color: var(--accent); flex: 0 0 auto; }
+  .opt-radio b { color: var(--accent-ink); }
+  .opt-hint { font-size: 11.5px; color: var(--muted); margin-top: 2px; padding-left: 2px; }
   .await {
     height: clamp(260px, 58vw, 400px); border: 1.5px dashed var(--line); border-radius: 12px;
     display: grid; place-items: center; color: var(--muted); font-size: 13.5px;
@@ -246,8 +270,8 @@
   .response-note { margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-ink); font-size: 13px; line-height: 1.45; }
   .response-note > b { display: block; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 5px; }
   .response-note p { margin: 0 0 8px; white-space: pre-wrap; word-break: break-word; }
-  /* Inline "Edit" affordance — lets the owner revise a submitted response any
-     time, even while the issue is awaiting (re-)fix. */
+  /* Inline "Edit" affordance on a submitted response — lets the owner revise it
+     any time, even while the issue is awaiting (re-)fix (owner req 2026-06-24). */
   .resp-edit { float: right; margin-top: -2px; font-size: 11px; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--accent-ink); background: transparent; border: 1px solid var(--line); border-radius: 7px; padding: 2px 8px; cursor: pointer; }
   .resp-edit:hover { background: var(--accent-soft); }
   .response-note .shot, .response-note .shots-grid { margin-top: 4px; }
@@ -340,7 +364,16 @@
   #lightbox::backdrop { background: rgb(10 12 14 / .92); }
   #lightbox img { width: 100vw; height: 100dvh; object-fit: contain; cursor: zoom-out; }
 
+  /* ── Report viewer (private HTML report rendered inline, on click) ── */
+  #report-viewer { width: 100vw; max-width: none; height: 100dvh; margin: 0; padding: 0; border: 0; border-radius: 0; background: var(--bg); }
+  #report-viewer::backdrop { background: rgb(10 12 14 / .92); }
+  .rv-bar { position: sticky; top: 0; display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--ink); color: #fff; }
+  .rv-bar .rv-title { font-size: 13.5px; font-weight: 700; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rv-bar .rv-x { border: 0; background: rgb(255 255 255 / .14); color: #fff; font: inherit; font-size: 14px; font-weight: 700; min-height: 40px; min-width: 40px; border-radius: 9px; cursor: pointer; }
+  .rv-bar .rv-x:active { opacity: .7; }
+  #rv-frame { width: 100%; height: calc(100dvh - 60px); border: 0; background: var(--bg); }
   .rv-state { padding: 48px 22px; text-align: center; color: var(--muted); font-size: 14.5px; }
+
   /* ── Tabs + Metrics dashboard ──────────────────────────── */
   .tabs { display: flex; gap: 6px; margin: 14px 0 4px; }
   .tab { font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 999px; padding: 7px 18px; min-height: 40px; }
@@ -443,8 +476,7 @@
     <button type="button" id="banner-retry">Retry</button>
   </div>
 
-  <!-- Metrics dashboard (real data from the private store; token-gated). Populated
-       by tools/metrics-collect.mjs → metrics.json in the private repo. -->
+  <!-- Metrics dashboard (real data from the private store; token-gated like reports). -->
   <section id="metrics-view" hidden>
     <div id="metrics-body"><div class="rv-state">Loading metrics…</div></div>
   </section>
@@ -570,6 +602,10 @@
 </dialog>
 
 <dialog id="lightbox"><img id="lightbox-img" alt="screenshot" /></dialog>
+<dialog id="report-viewer">
+  <div class="rv-bar"><span class="rv-title" id="rv-title">Report</span><button type="button" class="rv-x" id="rv-close" aria-label="Close report">✕ Close</button></div>
+  <iframe id="rv-frame" title="Report" sandbox referrerpolicy="no-referrer"></iframe>
+</dialog>
 <div id="toast" role="status"></div>
 
 <!-- Optional: written by `snapfix init` at setup. Sets window.QA_CONFIG =
@@ -636,6 +672,11 @@ const API = `https://api.github.com/repos/${OWNER}/${REPO}`;
 const PRIV_OWNER = QA.PRIV_OWNER, PRIV_REPO = QA.PRIV_REPO, PRIV_BRANCH = QA.PRIV_BRANCH;
 const PRIV_API = `https://api.github.com/repos/${PRIV_OWNER}/${PRIV_REPO}`;
 const privImgCache = new Map(); // path -> data URI | null
+const privReportCache = new Map(); // path -> decoded HTML string | null
+// Private-content caches are keyed by path only, so a token change must flush them:
+// otherwise a stale-token failure (cached null) blocks a retry after the token is
+// fixed, and content fetched under one token could surface under another.
+function clearPrivCaches() { privImgCache.clear(); privReportCache.clear(); }
 const $ = (id) => document.getElementById(id);
 
 let db = null;          // parsed issues.json
@@ -670,6 +711,41 @@ function goalBadgesHtml(fix) {
 
 /* ── utils ─────────────────────────────────────────────── */
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// i-20260628-831e: render issue descriptions structured — numbered "(1)…(2)…"
+// runs become a bullet/step list; "(A)…(B)…" choices become selectable RADIOS
+// that pre-fill the Respond box with the picked letter. Falls back to a plain
+// paragraph when no structure is detected.
+function formatDesc(raw, id) {
+  if (!raw) return "";
+  let head = String(raw), optsHtml = "";
+  const letters = [...head.matchAll(/\(([A-F])\)/g)];
+  const distinct = [...new Set(letters.map((m) => m[1]))];
+  if (distinct.length >= 2) {
+    const firstAt = letters[0].index;
+    const block = head.slice(firstAt);
+    head = head.slice(0, firstAt).trim();
+    const parts = block.split(/(?=\([A-F]\)\s)/).filter((s) => s.trim());
+    const opts = parts.map((p) => {
+      const m = p.match(/^\(([A-F])\)\s*([\s\S]*)$/);
+      if (!m) return "";
+      return `<label class="opt-radio"><input type="radio" name="opt-${esc(id)}" value="${esc(m[1])}"><span><b>${esc(m[1])}.</b> ${esc(m[2].trim())}</span></label>`;
+    }).join("");
+    if (opts) optsHtml = `<div class="desc-opts" data-opts="${esc(id)}">${opts}<div class="opt-hint">Pick one → opens your response pre-filled</div></div>`;
+  }
+  let stepsHtml = "";
+  const nums = [...head.matchAll(/\((\d+)\)/g)];
+  if (nums.length >= 2) {
+    const firstAt = nums[0].index;
+    const pre = head.slice(0, firstAt).trim();
+    const block = head.slice(firstAt);
+    const items = block.split(/(?=\(\d+\)\s)/).filter((s) => s.trim());
+    const lis = items.map((s) => { const m = s.match(/^\(\d+\)\s*([\s\S]*)$/); return m ? `<li>${esc(m[1].trim())}</li>` : ""; }).join("");
+    stepsHtml = (pre ? `<p class="desc">${esc(pre)}</p>` : "") + `<ol class="desc-steps">${lis}</ol>`;
+    head = "";
+  }
+  const headHtml = head.trim() ? `<p class="desc">${esc(head.trim())}</p>` : "";
+  return headHtml + stepsHtml + optsHtml;
+}
 function b64encodeUtf8(str) {
   const bytes = new TextEncoder().encode(str);
   let bin = "";
@@ -708,6 +784,53 @@ async function fetchPrivImage(path) {
     privImgCache.set(path, null);
     return null;
   }
+}
+// Fetch a private HTML report from the PRIVATE repo (same auth path as private
+// images) and decode it to a UTF-8 string. Reports live in the private repo so
+// they are NOT publicly reachable; only a connected token can read them.
+async function fetchPrivReport(path) {
+  if (privReportCache.has(path)) return privReportCache.get(path);
+  if (!token) return null; // not cached — so it retries once a token is added
+  try {
+    const r = await fetch(`${PRIV_API}/contents/${path}?ref=${PRIV_BRANCH}`, {
+      headers: headers(), cache: "no-store",
+    });
+    if (!r.ok) { privReportCache.set(path, null); return null; }
+    const j = await r.json();
+    const html = b64decodeUtf8(j.content);
+    privReportCache.set(path, html);
+    return html;
+  } catch {
+    return null;
+  }
+}
+// Defence-in-depth CSP injected into every rendered report. The bare `sandbox`
+// attribute already blocks ALL scripts and forces an opaque origin (so a report
+// can never execute JS or read the parent's token — verified empirically). This
+// CSP additionally blocks external sub-resource loads (img/css/font beacons),
+// closing the last "phone home" vector if the private store were ever tampered
+// with. Reports are self-contained (inline <style> only), so nothing breaks.
+const REPORT_CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'">`;
+const stubDoc = (msg) => `<!doctype html><meta charset=utf-8>${REPORT_CSP}<body style="font-family:system-ui;color:#6b6b6b;padding:48px 22px;text-align:center">${msg}</body>`;
+// Render a private report inline. sandbox="" (bare) = no scripts + opaque origin;
+// the REPORT_CSP above adds sub-resource lockdown. The report can neither read the
+// parent token nor call out.
+async function openReport(path, label) {
+  $("rv-title").textContent = label || "Report";
+  const frame = $("rv-frame");
+  if (!token) { openSettings("Connect your token to view this private report."); return; }
+  frame.removeAttribute("srcdoc");
+  frame.srcdoc = stubDoc("Loading report…");
+  $("report-viewer").showModal();
+  const html = await fetchPrivReport(path);
+  if (html == null) {
+    frame.srcdoc = stubDoc("Couldn't load this report — your token may lack access to the private store.");
+    return;
+  }
+  // Inject the CSP into the report's <head> (fallback: prepend) before rendering.
+  frame.srcdoc = /<head[^>]*>/i.test(html)
+    ? html.replace(/<head[^>]*>/i, (m) => m + REPORT_CSP)
+    : REPORT_CSP + html;
 }
 async function resolvePrivImages() {
   const imgs = document.querySelectorAll("img[data-priv-path]:not(.priv-loaded)");
@@ -900,7 +1023,10 @@ function cardHtml(it, archived) {
       <div class="side">
         <h3>Issue</h3>
         ${shotsHtml(it.imagePaths || [it.imagePath], it.imageCommits || [it.imageCommit], "issue screenshot", it.imagePrivate)}
-        <p class="desc">${esc(it.description)}</p>
+        ${formatDesc(it.description, it.id)}
+        ${it.reportPath
+          ? `<button type="button" class="report-cta" data-report-path="${esc(it.reportPath)}" data-report-label="${esc(it.reportLabel || "Open report")}">📄 ${esc(it.reportLabel || "Open report")} <span class="arr">&rarr;</span></button>`
+          : it.link ? `<a class="report-cta" href="${esc(it.link)}" target="_blank" rel="noopener">${esc(it.linkLabel || "View report")} <span class="arr">&rarr;</span></a>` : ""}
         ${it.author ? `<div class="card-tags">${actorHtml(it.author, "filed by")}</div>` : ""}
         ${tagsHtml}
       </div>
@@ -1148,6 +1274,7 @@ $("chip-conn").addEventListener("click", () => openSettings());
 $("tok-close").addEventListener("click", () => $("settings").close());
 $("tok-forget").addEventListener("click", () => {
   token = ""; localStorage.removeItem("qaToken");
+  clearPrivCaches();
   connState(false); $("token").value = "";
   $("tok-state").textContent = "Token forgotten."; $("tok-state").className = "tok-state";
 });
@@ -1158,6 +1285,7 @@ $("tok-save").addEventListener("click", async () => {
   try {
     const login = await testToken(t);
     token = t; localStorage.setItem("qaToken", t);
+    clearPrivCaches();
     connState(true, login);
     $("tok-state").textContent = "Connected as " + login + " ✓";
     $("tok-state").className = "tok-state ok";
@@ -1266,6 +1394,20 @@ document.addEventListener("click", (ev) => {
   }
 });
 $("lightbox").addEventListener("click", () => $("lightbox").close());
+
+/* ── report viewer (private HTML, rendered inline on click) ── */
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest(".report-cta[data-report-path]");
+  if (!b) return;
+  ev.preventDefault();
+  openReport(b.dataset.reportPath, b.dataset.reportLabel);
+});
+$("rv-close").addEventListener("click", () => {
+  const f = $("rv-frame");
+  $("report-viewer").close();
+  f.removeAttribute("srcdoc"); // unload so a reopen starts clean
+});
+$("report-viewer").addEventListener("cancel", () => $("rv-frame").removeAttribute("srcdoc"));
 
 /* ── metrics dashboard (real data, private store, token-gated, charts) ── */
 let metricsLoaded = false;
@@ -1483,6 +1625,13 @@ function openRespond(id) {
   $("reply-text").focus();
 }
 $("respond-cancel").addEventListener("click", () => $("respond-dialog").close());
+// 831e: picking an option radio opens the Respond dialog pre-filled with the letter.
+document.addEventListener("change", (ev) => {
+  const r = ev.target.closest && ev.target.closest(".desc-opts input[type=radio]");
+  if (!r) return;
+  const id = r.closest(".desc-opts").dataset.opts;
+  if (id) { openRespond(id); $("reply-text").value = r.value; $("reply-text").focus(); }
+});
 $("respond-save").addEventListener("click", async (ev) => {
   const id = respondTargetId;
   const reply = $("reply-text").value.trim();
