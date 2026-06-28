@@ -32,6 +32,7 @@ const HOSTKEY = cfg("sshHostkey", "");
 const HOST = cfg("sshHost", "");
 const DB_CMD = cfg("dbCommand", "cd ~/nyu_backend && ./venv/bin/python metrics_db.py 2>/dev/null | tail -1");
 const GA4_PROPERTY = cfg("ga4Property", "");
+const AUDIT_DIR = cfg("auditDir", "");
 const GA4_SA = [process.env.GA4_SA_JSON, CFG.ga4SaPath, `${HOME}\\Desktop\\nyus-ga4-sa.json`, `${HOME}\\Desktop\\NYUSLANDING\\scripts\\ga4-sa.json`].find(p => p && existsSync(p));
 
 const warn = [];
@@ -92,6 +93,20 @@ async function pullGa4() {
   } catch (e) { warn.push("ga4: " + String(e.message || e).slice(0, 120)); return null; }
 }
 
+// ── 3b. dependency vulnerabilities (npm audit, free — no third-party) ──
+function pullVuln() {
+  if (!AUDIT_DIR || !existsSync(AUDIT_DIR)) return null;
+  try {
+    // npm audit exits non-zero when vulns exist → capture stdout regardless.
+    let out = "";
+    try { out = execFileSync("npm", ["audit", "--json"], { cwd: AUDIT_DIR, encoding: "utf8", timeout: 90000, maxBuffer: 32 << 20, shell: true }); }
+    catch (e) { out = e.stdout || ""; }
+    const v = JSON.parse(out).metadata?.vulnerabilities;
+    if (!v) return null;
+    return { critical: v.critical || 0, high: v.high || 0, moderate: v.moderate || 0, low: v.low || 0, total: v.total || 0 };
+  } catch (e) { warn.push("vuln: " + String(e.message || e).slice(0, 120)); return null; }
+}
+
 // ── 3. prod health ─────────────────────────────────────────
 function pullHealth() {
   if (!HOST || !HOSTKEY) return {};
@@ -112,6 +127,7 @@ function num(v) { return (v === null || v === undefined) ? null : v; }
 const db = pullDb();
 const ga4 = await pullGa4();
 const health = pullHealth();
+const vuln = pullVuln();
 
 const m = (key, label, value, opt = {}) => ({ key, label, value: value === undefined ? null : value,
   status: (value && value.status === "awaiting") ? "awaiting" : (value === null || value === undefined ? "nodata" : "live"),
@@ -127,6 +143,8 @@ const soc = db.social_community || {};
 const seg = db.segmentation || {};
 const eng = db.engagement_extra || {};
 const web = db.web_content || {};
+const exp = db.experiments || {};
+const gd = db.gdpr || {};
 
 const categories = [
   { key: "product_growth", title: "Product & Growth", metrics: [
@@ -209,7 +227,7 @@ const categories = [
   { key: "security", title: "Security & Privacy", metrics: [
     m("sec_events_30d", "Security events (30d, by severity)", sec.events_30d_by_severity ? Object.entries(sec.events_30d_by_severity).map(([k, v]) => `${k}:${v}`).join(" ") : null, { source: "DB security_event_logs", owner: "Security", priority: "M" }),
     m("otp_30d", "OTP requests (30d)", num(sec.otp_requests_30d), { source: "DB otps", owner: "Security", priority: "L" }),
-    m("vuln_count", "Open high-severity vulnerabilities", A("npm audit / Snyk scan wired into CI (can be automated next)"), { owner: "Security", priority: "H" }),
+    m("vuln_count", "Open high-severity vulnerabilities", vuln ? (vuln.high + vuln.critical) : A("set auditDir in metrics.config.local.json (free npm audit) or provide a Snyk token"), { unit: vuln ? `high+crit (${vuln.total} total: ${vuln.critical}C/${vuln.high}H/${vuln.moderate}M/${vuln.low}L)` : "", formula: "npm audit high+critical", source: "npm audit", owner: "Security", priority: "H" }),
     m("privacy_consents", "Privacy consent opt-in rate", A("Consent events instrumented in-app (ATT/GDPR prompt outcomes)"), { owner: "Compliance", priority: "M" }),
   ]},
   { key: "infra", title: "Infrastructure & Ops", metrics: [
@@ -224,7 +242,7 @@ const categories = [
     m("seg_gender", "Users by gender", seg.by_gender ? Object.entries(seg.by_gender).map(([k, v]) => `${k}:${v}`).join(" ") : null, { source: "DB", owner: "Data", priority: "M" }),
     m("seg_activity", "Users by activity level", seg.by_activity_level ? Object.entries(seg.by_activity_level).map(([k, v]) => `${k}:${v}`).join(" ") : null, { source: "DB", owner: "Data", priority: "L" }),
     m("top_pages", "Top web pages (30d)", web.top_pages_30d ? Object.keys(web.top_pages_30d).length + " pages" : null, { source: "DB page_views", owner: "Content", priority: "M" }),
-    m("experiments", "Active A/B experiments", A("Experiment platform (Firebase Remote Config / GrowthBook) wired to a results table"), { owner: "PM", priority: "M" }),
+    m("experiments", "Active A/B experiments", num(exp.active), { formula: "distinct experiment_id (user_experiment_assignments)", source: "DB user_experiment_assignments", owner: "PM", priority: "M" }),
   ]},
   { key: "engagement", title: "Engagement & Gamification", metrics: [
     m("active_streaks", "Active streaks", num(eng.active_streaks), { source: "DB user_streaks", owner: "Product", priority: "M" }),
@@ -234,7 +252,7 @@ const categories = [
   ]},
   { key: "competitors_legal", title: "Competitors & Legal", metrics: [
     m("competitor_share", "Competitor downloads / revenue", A("Sensor Tower / data.ai estimates (paid) — manual quarterly research"), { owner: "Strategy", priority: "L" }),
-    m("gdpr_requests", "GDPR/DPDP data-subject requests", num(null) === null ? A("Surface from admin_gdpr_requests — wire next (table exists)") : null, { owner: "Legal", priority: "M" }),
+    m("gdpr_requests", "GDPR/DPDP requests (30d)", num(gd.requests_30d), { source: "DB admin_gdpr_requests", owner: "Legal", priority: "M" }),
     m("privacy_incidents", "Privacy incident rate", A("Incident log (0 = none reported); wire to a tracked table when an incident process exists"), { owner: "Legal", priority: "H" }),
   ]},
 ];
@@ -264,14 +282,45 @@ const PRIV = cfg("privRepo", process.env.QA_PRIV_REPO || "");
 if (!PRIV) { console.error("No private repo configured (metrics.config.local.json privRepo). metrics.json kept at tmp/."); process.exit(1); }
 const PRIV_PATH = "data/metrics.json";
 function ghJson(args) { return JSON.parse(execFileSync("gh", args, { encoding: "utf8", maxBuffer: 16 << 20, timeout: 45000 })); }
-try {
+function ghPut(path, contentObj, msg) {
   let sha;
-  try { sha = ghJson(["api", `repos/${PRIV}/contents/${PRIV_PATH}`]).sha; } catch { /* new file */ }
-  const b64 = Buffer.from(payload).toString("base64");
-  const body = join(ROOT, "tmp", "metrics-put.json");
-  writeFileSync(body, JSON.stringify({ message: `metrics: refresh ${metrics.generatedAt}`, content: b64, ...(sha ? { sha } : {}) }));
-  execFileSync("gh", ["api", "--method", "PUT", `repos/${PRIV}/contents/${PRIV_PATH}`, "--input", body], { encoding: "utf8", timeout: 45000 });
-  console.log(`metrics.json -> PRIVATE ${PRIV}:${PRIV_PATH} | ${total} metrics (${liveCount} live, ${awaitingCount} awaiting) | db=${metrics.sources.db} ga4=${metrics.sources.ga4} health=${metrics.sources.health}`);
+  try { sha = ghJson(["api", `repos/${PRIV}/contents/${path}`]).sha; } catch {}
+  const b64 = Buffer.from(JSON.stringify(contentObj, null, 2)).toString("base64");
+  const body = join(ROOT, "tmp", "put-" + path.replace(/[\/.]/g, "_") + ".json");
+  writeFileSync(body, JSON.stringify({ message: msg, content: b64, ...(sha ? { sha } : {}) }));
+  execFileSync("gh", ["api", "--method", "PUT", `repos/${PRIV}/contents/${path}`, "--input", body], { encoding: "utf8", timeout: 45000 });
+}
+// One DAILY snapshot of key scalars -> metrics-history.json (last 180 days) for
+// trend charts. Runs hourly but dedupes by date, so history stays one-point-per-day.
+function appendHistory() {
+  const date = (metrics.generatedAt || "").slice(0, 10);
+  const snap = { date,
+    users_total: db.users_total ?? null, users_new: db.users_new_today ?? null,
+    dau: db.dau ?? null, wau: db.wau ?? null, mau: db.mau ?? null,
+    activation: db.activation_rate_pct ?? null,
+    active_subs: sub.active ?? null, sub_revenue: sub.mrr_minor_units != null ? +(sub.mrr_minor_units / 100).toFixed(2) : null,
+    ai_calls: ai.calls_today ?? null, ai_cost: ai.cost_usd_today ?? null, ai_p95: ai.latency_p95_ms ?? null,
+    organic: ga4 ? ga4.organic_30d : null, aeo: ga4 ? ga4.aeo_ai_assistant_30d : null,
+    web_sessions: ga4 ? ga4.sessions_30d : null,
+    workouts_7d: db.workouts_completed_7d ?? null, meals_7d: db.meals_logged_7d ?? null,
+    vuln_high: vuln ? (vuln.high + vuln.critical) : null, errors_today: health.errors_today ?? null };
+  let hist = [];
+  try { hist = JSON.parse(b64FromGh(ghJson(["api", `repos/${PRIV}/contents/data/metrics-history.json`]))); } catch {}
+  if (!Array.isArray(hist)) hist = [];
+  hist = hist.filter(h => h.date !== date);
+  hist.push(snap);
+  hist.sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (hist.length > 180) hist = hist.slice(-180);
+  ghPut("data/metrics-history.json", hist, `metrics-history: ${date}`);
+  return hist.length;
+}
+function b64FromGh(resp) { return Buffer.from(resp.content.replace(/\s/g, ""), "base64").toString("utf8"); }
+
+try {
+  ghPut(PRIV_PATH, metrics, `metrics: refresh ${metrics.generatedAt}`);
+  let hpts = 0;
+  try { hpts = appendHistory(); } catch (e) { warn.push("history: " + String(e.message || e).slice(0, 100)); }
+  console.log(`metrics.json -> PRIVATE ${PRIV}:${PRIV_PATH} | ${total} metrics (${liveCount} live, ${awaitingCount} awaiting) | history ${hpts}d | db=${metrics.sources.db} ga4=${metrics.sources.ga4} health=${metrics.sources.health}`);
 } catch (e) {
   console.error("PRIVATE upload failed (metrics.json kept at tmp/):", String(e.message || e).slice(0, 160));
   process.exitCode = 1;

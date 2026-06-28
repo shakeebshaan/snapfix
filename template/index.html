@@ -340,11 +340,12 @@
   #lightbox::backdrop { background: rgb(10 12 14 / .92); }
   #lightbox img { width: 100vw; height: 100dvh; object-fit: contain; cursor: zoom-out; }
 
-  /* ── Tabs + Metrics dashboard (real-data KPIs, private store, token-gated) ── */
   .rv-state { padding: 48px 22px; text-align: center; color: var(--muted); font-size: 14.5px; }
+  /* ── Tabs + Metrics dashboard ──────────────────────────── */
   .tabs { display: flex; gap: 6px; margin: 14px 0 4px; }
   .tab { font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; border: 1px solid var(--line); background: transparent; color: var(--muted); border-radius: 999px; padding: 7px 18px; min-height: 40px; }
   .tab.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+  /* When the Metrics tab is active, hide the issue UI; otherwise hide metrics. */
   body.tab-metrics #add, body.tab-metrics #tagbar, body.tab-metrics #list,
   body.tab-metrics #arch-toggle, body.tab-metrics #arch { display: none !important; }
   body:not(.tab-metrics) #metrics-view { display: none; }
@@ -353,7 +354,7 @@
   .m-kpi { flex: 1; min-width: 120px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
   .m-kpi .v { font-size: 26px; font-weight: 800; letter-spacing: -.02em; line-height: 1; }
   .m-kpi .l { font-size: 12px; color: var(--muted); margin-top: 6px; }
-  .m-kpi.live .v { color: var(--accent-ink); } .m-kpi.await .v { color: hsl(35 90% 42%); }
+  .m-kpi.live .v { color: var(--accent-ink); } .m-kpi.awa .v { color: hsl(35 90% 42%); }
   .m-meta { font-size: 12px; color: var(--muted); margin: 2px 0 14px; }
   .m-cat { background: var(--card); border: 1px solid var(--line); border-radius: 16px; margin-bottom: 14px; overflow: hidden; }
   .m-cat > h3 { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 14px 16px 10px; margin: 0; }
@@ -361,14 +362,54 @@
   .m-row .ml { flex: 1; min-width: 150px; font-size: 13.5px; color: var(--ink); font-weight: 600; }
   .m-row .ml .sub { display: block; font-weight: 400; font-size: 11.5px; color: var(--muted); margin-top: 2px; }
   .m-row .mv { font-size: 17px; font-weight: 800; letter-spacing: -.01em; white-space: nowrap; }
-  .m-row .mv.await { font-size: 12px; font-weight: 700; color: hsl(35 90% 42%); }
+  .m-row .mv.awa { font-size: 12px; font-weight: 700; color: hsl(35 90% 42%); }
   .m-row .mv.nodata { font-size: 12px; color: var(--muted); font-weight: 600; }
   .m-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; letter-spacing: .03em; text-transform: uppercase; }
   .m-badge.live { background: var(--accent-soft); color: var(--accent-ink); }
-  .m-badge.await { background: var(--amber-soft); color: var(--amber-ink); }
+  .m-badge.awa { background: var(--amber-soft); color: var(--amber-ink); }
   .m-badge.nodata { background: hsl(40 15% 92%); color: var(--muted); }
   .m-need { flex-basis: 100%; font-size: 12px; color: hsl(35 60% 34%); background: var(--amber-soft); border-radius: 8px; padding: 7px 10px; margin-top: 2px; line-height: 1.4; }
   .m-prio { font-size: 10px; font-weight: 700; color: var(--muted); }
+  /* head + pills */
+  .m-head { margin: 14px 0 12px; }
+  .m-pills { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-start; }
+  .mp { display: inline-block; align-self: flex-start; font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 999px; background: hsl(40 15% 92%); color: var(--muted); line-height: 1.5; }
+  .mp.live { background: var(--accent-soft); color: var(--accent-ink); }
+  .mp.awa { background: var(--amber-soft); color: var(--amber-ink); }
+  /* hero KPI band with sparkline */
+  .m-heroes { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .m-hero { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px 8px; border-top: 3px solid var(--ha, var(--accent)); box-shadow: 0 1px 3px rgb(0 0 0 / .04); position: relative; overflow: hidden; }
+  .mh-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .mh-l { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .hd { font-size: 11px; font-weight: 700; } .hd.up { color: hsl(150 60% 36%); } .hd.dn { color: hsl(0 60% 48%); }
+  .mh-v { font-size: 30px; font-weight: 800; letter-spacing: -.02em; line-height: 1.05; margin: 4px 0 2px; }
+  .mh-u { font-size: 14px; font-weight: 700; color: var(--muted); margin-left: 3px; }
+  .spark { display: block; width: 100%; height: 34px; margin-top: 2px; }
+  /* charts grid */
+  .m-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .m-chart { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; box-shadow: 0 1px 3px rgb(0 0 0 / .04); }
+  .m-chart h4 { font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 0 0 12px; }
+  .chart-bars { display: flex; flex-direction: column; gap: 9px; }
+  .cb-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .cb-l { flex: 0 0 86px; color: var(--ink); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cb-track { flex: 1; height: 10px; background: hsl(40 15% 93%); border-radius: 999px; overflow: hidden; }
+  .cb-fill { display: block; height: 100%; border-radius: 999px; }
+  .cb-v { flex: 0 0 auto; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .chart-funnel { display: flex; flex-direction: column; gap: 8px; }
+  .cf-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .cf-l { flex: 0 0 76px; font-weight: 600; }
+  .cf-track { flex: 1; }
+  .cf-bar { display: flex; align-items: center; justify-content: flex-end; height: 22px; border-radius: 6px; min-width: 28px; padding: 0 8px; }
+  .cf-v { color: #fff; font-weight: 700; font-size: 11.5px; }
+  .cf-conv { flex: 0 0 38px; text-align: right; color: var(--muted); font-weight: 700; }
+  .chart-donut { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .chart-donut svg { width: 112px; height: 112px; flex: 0 0 auto; }
+  .donut-tot { font-size: 22px; font-weight: 800; fill: var(--ink); }
+  .donut-legend { flex: 1; min-width: 120px; display: flex; flex-direction: column; gap: 5px; }
+  .dl-row { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink); }
+  .dl-dot { width: 9px; height: 9px; border-radius: 3px; flex: 0 0 auto; }
+  .dl-l { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .m-cat { border-left: 3px solid var(--ca, var(--accent)); }
 
   /* ── Skeletons ──────────────────────────────────────── */
   .skel { border-radius: var(--radius); border: 1px solid var(--line); background: var(--card); margin-bottom: 18px; padding: 16px; }
@@ -1226,35 +1267,89 @@ document.addEventListener("click", (ev) => {
 });
 $("lightbox").addEventListener("click", () => $("lightbox").close());
 
-/* ── metrics dashboard (real data, private store, token-gated) ── */
+/* ── metrics dashboard (real data, private store, token-gated, charts) ── */
 let metricsLoaded = false;
-async function fetchPrivMetrics() {
+const CPAL = ["#0a8f73", "#7c5cdb", "#e2731f", "#cc5c96", "#3b82c4", "#64748b", "#2e9e6b", "#d98a1f"];
+const CAT_ACCENT = { product_growth: "#0a8f73", finance: "#2e9e6b", ai: "#7c5cdb", marketing_seo: "#3b82c4", app_store: "#e2731f", health_data: "#0a8f73", social_community: "#cc5c96", support: "#d98a1f", security: "#d6453d", infra: "#64748b", analytics: "#7c5cdb", engagement: "#e2731f", competitors_legal: "#64748b" };
+async function fetchPrivJson(path) {
   if (!token) return null;
   try {
-    const r = await fetch(`${PRIV_API}/contents/data/metrics.json?ref=${PRIV_BRANCH}&t=${Date.now()}`, { headers: headers(), cache: "no-store" });
+    const r = await fetch(`${PRIV_API}/contents/${path}?ref=${PRIV_BRANCH}&t=${Date.now()}`, { headers: headers(), cache: "no-store" });
     if (!r.ok) return null;
     return JSON.parse(b64decodeUtf8((await r.json()).content));
   } catch { return null; }
 }
-function renderMetrics(d) {
+const fetchPrivMetrics = () => fetchPrivJson("data/metrics.json");
+/* ── inline-SVG chart builders (CSP-safe, no deps) ── */
+function svgSpark(vals, color = CPAL[0], w = 132, h = 34) {
+  const idx = vals.map((v, i) => [i, v]).filter(p => typeof p[1] === "number");
+  if (idx.length < 2) return "";
+  const ys = idx.map(p => p[1]), mn = Math.min(...ys), mx = Math.max(...ys), rng = (mx - mn) || 1, n = vals.length - 1 || 1;
+  const pts = idx.map(([i, v]) => [(i / n) * (w - 4) + 2, h - 3 - ((v - mn) / rng) * (h - 6)]);
+  const dd = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  const area = dd + ` L${pts[pts.length - 1][0].toFixed(1)} ${h} L${pts[0][0].toFixed(1)} ${h} Z`;
+  const last = pts[pts.length - 1];
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true"><path d="${area}" fill="${color}" opacity="0.10"/><path d="${dd}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2.6" fill="${color}"/></svg>`;
+}
+function chartBars(items, color = CPAL[0]) {
+  if (!items.length) return "";
+  const mx = Math.max(...items.map(i => i.value), 1);
+  return `<div class="chart-bars">` + items.map(i => `<div class="cb-row"><span class="cb-l">${esc(i.label)}</span><span class="cb-track"><span class="cb-fill" style="width:${(100 * i.value / mx).toFixed(1)}%;background:${color}"></span></span><span class="cb-v">${esc(String(i.value))}${i.unit ? esc(i.unit) : ""}</span></div>`).join("") + `</div>`;
+}
+function chartFunnel(stages) {
+  if (!stages.length || !stages[0].value) return "";
+  const top = stages[0].value;
+  return `<div class="chart-funnel">` + stages.map((s, i) => {
+    const pct = 100 * s.value / top, conv = i ? (100 * s.value / (stages[i - 1].value || 1)).toFixed(0) + "%" : "100%";
+    return `<div class="cf-row"><span class="cf-l">${esc(s.label)}</span><span class="cf-track"><span class="cf-bar" style="width:${Math.max(pct, 4).toFixed(1)}%;background:${CPAL[i % CPAL.length]}"><span class="cf-v">${esc(String(s.value))}</span></span></span><span class="cf-conv">${conv}</span></div>`;
+  }).join("") + `</div>`;
+}
+function chartDonut(segs) {
+  const tot = segs.reduce((a, s) => a + s.value, 0) || 1, R = 42, C = 2 * Math.PI * R;
+  let off = 0;
+  const rings = segs.map((s, i) => { const len = (s.value / tot) * C, r = `<circle cx="60" cy="60" r="${R}" fill="none" stroke="${CPAL[i % CPAL.length]}" stroke-width="15" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 60 60)"/>`; off += len; return r; }).join("");
+  const legend = segs.map((s, i) => `<div class="dl-row"><span class="dl-dot" style="background:${CPAL[i % CPAL.length]}"></span><span class="dl-l">${esc(s.label)}</span><b>${esc(String(s.value))}</b></div>`).join("");
+  return `<div class="chart-donut"><svg viewBox="0 0 120 120" aria-hidden="true">${rings}<text x="60" y="65" text-anchor="middle" class="donut-tot">${tot}</text></svg><div class="donut-legend">${legend}</div></div>`;
+}
+function renderMetrics(d, hist) {
   const body = $("metrics-body");
   if (!d) {
-    body.innerHTML = `<div class="rv-state">${token ? "No metrics yet — run tools/metrics-collect.mjs, or your token lacks access to the private store." : "Connect your token (top-right) to view the private metrics dashboard."}</div>`;
+    body.innerHTML = `<div class="rv-state">${token ? "No metrics yet — the collector hasn't run, or your token lacks access to the private store." : "Connect your token (top-right ⊞/connect) to view the private metrics dashboard."}</div>`;
     return;
   }
-  const s = d.summary || {};
-  const kpi = (cls, v, l) => `<div class="m-kpi ${cls}"><div class="v">${esc(String(v))}</div><div class="l">${esc(l)}</div></div>`;
+  hist = Array.isArray(hist) ? hist : [];
+  const ser = (k) => hist.map(h => h[k]);
+  const s = d.summary || {}, det = d.detail || {};
   const srcs = Object.entries(d.sources || {}).filter(([, v]) => v).map(([k]) => k).join(", ") || "none";
-  let html = `<div class="m-summary">${kpi("", s.total ?? "–", "metrics tracked")}${kpi("live", s.live ?? "–", "live · real data")}${kpi("await", s.awaiting ?? "–", "awaiting setup")}</div>`
-    + `<div class="m-meta">Real data · generated ${fmtDate(d.generatedAt)} · sources: ${esc(srcs)} · ${d.periodDays || 30}-day window.</div>`;
+  const findVal = (ck, mk) => { const c = (d.categories || []).find(c => c.key === ck); const m = c && c.metrics.find(x => x.key === mk); return m && m.status === "live" ? m.value : null; };
+  const hero = (accent, label, value, unit, key) => {
+    const series = ser(key).filter(v => typeof v === "number");
+    let delta = "";
+    if (series.length > 1 && typeof value === "number") { const dv = +(value - series[0]).toFixed(2); if (dv) delta = `<span class="hd ${dv > 0 ? "up" : "dn"}">${dv > 0 ? "▲" : "▼"} ${Math.abs(dv)}</span>`; }
+    return `<div class="m-hero" style="--ha:${accent}"><div class="mh-top"><span class="mh-l">${esc(label)}</span>${delta}</div><div class="mh-v">${unit === "$" ? esc(unit) : ""}${value == null ? "–" : esc(String(value))}${unit && unit !== "$" ? `<span class="mh-u">${esc(unit)}</span>` : ""}</div>${svgSpark(series, accent)}</div>`;
+  };
+  let html = `<div class="m-head"><div class="m-pills"><span class="mp live">${s.live ?? "–"} live</span><span class="mp awa">${s.awaiting ?? "–"} awaiting</span><span class="mp">${s.total ?? "–"} tracked</span></div><div class="m-meta">Real data · ${fmtDate(d.generatedAt)} · ${esc(srcs)} · ${d.periodDays || 30}d window${hist.length ? ` · ${hist.length}d history` : ""}</div></div>`;
+  html += `<div class="m-heroes">`
+    + hero(CPAL[0], "Total users", findVal("product_growth", "users_total"), "", "users_total")
+    + hero(CPAL[4], "Monthly active", findVal("product_growth", "mau"), "", "mau")
+    + hero(CPAL[1], "Active subs", findVal("finance", "active_subs"), "", "active_subs")
+    + hero(CPAL[2], "AI cost 30d", findVal("ai", "ai_cost_30d"), "$", "ai_cost")
+    + `</div>`;
+  const charts = [];
+  if (det.funnel && det.funnel.signups != null) charts.push(`<div class="m-chart"><h4>Acquisition funnel</h4>${chartFunnel([{ label: "Signups", value: det.funnel.signups }, { label: "Verified", value: det.funnel.verified }, { label: "Onboarded", value: det.funnel.onboarded }, { label: "Subscribed", value: det.funnel.subscribed }])}</div>`);
+  if (det.retention) { const r = det.retention, rb = [["D1", r.d1], ["D7", r.d7], ["D30", r.d30]].filter(x => x[1]).map(x => ({ label: x[0], value: x[1].pct, unit: "%" })); if (rb.length) charts.push(`<div class="m-chart"><h4>Retention by cohort</h4>${chartBars(rb, CPAL[1])}</div>`); }
+  if (det.ga4_channels && Object.keys(det.ga4_channels).length) { const segs = Object.entries(det.ga4_channels).map(([k, v]) => ({ label: k, value: v })).sort((a, b) => b.value - a.value).slice(0, 6); charts.push(`<div class="m-chart"><h4>Web acquisition channels</h4>${chartDonut(segs)}</div>`); }
+  if (det.ai_by_model && Object.keys(det.ai_by_model).length) { const segs = Object.entries(det.ai_by_model).map(([k, v]) => ({ label: k.slice(0, 20), value: v.calls })).sort((a, b) => b.value - a.value).slice(0, 5); charts.push(`<div class="m-chart"><h4>AI calls by model (30d)</h4>${chartBars(segs, CPAL[1])}</div>`); }
+  if (charts.length) html += `<div class="m-charts">${charts.join("")}</div>`;
   for (const cat of d.categories || []) {
-    html += `<div class="m-cat"><h3>${esc(cat.title)}</h3>`;
+    const acc = CAT_ACCENT[cat.key] || CPAL[5];
+    html += `<div class="m-cat" style="--ca:${acc}"><h3>${esc(cat.title)}</h3>`;
     for (const x of cat.metrics || []) {
       const val = x.status === "live"
         ? `<span class="mv">${esc(String(x.value))}${x.unit ? " " + esc(x.unit) : ""}</span>`
-        : x.status === "awaiting" ? `<span class="mv await">needs setup</span>` : `<span class="mv nodata">no data</span>`;
+        : x.status === "awaiting" ? `<span class="mv awa">needs setup</span>` : `<span class="mv nodata">no data</span>`;
       const sub = [x.formula, x.source && ("src " + x.source), x.owner && ("owner " + x.owner)].filter(Boolean).join(" · ");
-      const bcls = { live: "live", awaiting: "await", nodata: "nodata" }[x.status] || "nodata";
+      const bcls = { live: "live", awaiting: "awa", nodata: "nodata" }[x.status] || "nodata";
       html += `<div class="m-row"><span class="ml">${esc(x.label)}${sub ? `<span class="sub">${esc(sub)}</span>` : ""}</span>${val}<span class="m-badge ${bcls}">${esc(x.status)}</span>${x.priority ? `<span class="m-prio">P:${esc(x.priority)}</span>` : ""}`;
       if (x.status === "awaiting" && x.value && x.value.need) html += `<div class="m-need">▸ ${esc(x.value.need)}</div>`;
       html += `</div>`;
@@ -1263,7 +1358,12 @@ function renderMetrics(d) {
   }
   body.innerHTML = html;
 }
-async function showMetrics() { if (metricsLoaded) return; renderMetrics(await fetchPrivMetrics()); metricsLoaded = true; }
+async function showMetrics() {
+  if (metricsLoaded) return;
+  const [d, hist] = await Promise.all([fetchPrivMetrics(), fetchPrivJson("data/metrics-history.json")]);
+  renderMetrics(d, hist);
+  metricsLoaded = true;
+}
 function setTab(metrics) {
   document.body.classList.toggle("tab-metrics", metrics);
   $("tab-metrics").classList.toggle("active", metrics); $("tab-issues").classList.toggle("active", !metrics);

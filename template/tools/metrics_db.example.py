@@ -43,5 +43,7 @@ metric("activation_rate_pct", _activation)
 # Add finance (subscriptions), AI (llm logs), support, security, social, infra…
 # blocks the same way. metrics-collect.mjs maps these keys onto the dashboard
 # categories; keys it doesn't find simply render as "no data".
+# (See the NYUS production metrics_db.py for a full real-world reference covering
+#  retention cohorts, funnel, MRR/churn, AI latency/cost, etc.)
 
 print(json.dumps(out, default=str))
