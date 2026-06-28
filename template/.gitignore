@@ -1,0 +1,10 @@
+# snapfix board — never commit screenshots, local overrides, or sensitive data here.
+tmp/
+qa.config.local.json
+node_modules/
+.DS_Store
+# Metrics: local infra config (secrets/paths) + the data file. Sensitive business
+# metrics live in the PRIVATE companion repo, never the public board repo.
+metrics.config.local.json
+data/metrics.config.local.json
+data/metrics.json

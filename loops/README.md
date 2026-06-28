@@ -84,6 +84,7 @@ is how it starts. Linked names have a detailed per-loop file in [Detailed loops]
 | [Architecture satisfaction](architecture-satisfaction.md) | Tests | Manual | Refactor the structure until the test suite stays green and the shape feels right. |
 | [Sub-50ms page load](sub-50ms-page-load.md) | Metric | Manual | Optimize a route until measured p75 load drops below 50ms. |
 | [Production error sweep](production-error-sweep.md) | Auto + manual | Manual | Pull live errors, reproduce, and fix each until the error stream goes quiet. |
+| [Real-data metrics dashboard](metrics-dashboard.md) | Schedule | Verifiable | Refresh the board's Metrics tab from real sources (DB/GA4/stores/billing); every KPI is a live value or flagged "awaiting" with setup steps — never mock. |
 | [100% test coverage](test-coverage-100.md) | Metric | Manual | Add tests until line/branch coverage hits 100%. |
 | [Logging coverage](logging-coverage.md) | Review + tests | Manual | Instrument the code with structured logging until every critical path is observable and tested. |
 | [Test-suite speed](test-suite-speed.md) | Metric | Manual | Profile and parallelize the suite until total run time clears a wall-clock budget. |

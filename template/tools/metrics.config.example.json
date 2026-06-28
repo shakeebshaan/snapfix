@@ -1,0 +1,10 @@
+{
+  "_comment": "Copy this to data/metrics.config.local.json (gitignored) and fill in. Powers tools/metrics-collect.mjs. Env vars METRICS_<KEY> override these. Every project wires its own DB query + data sources; the board's Metrics tab renders whatever metrics.json the collector produces.",
+  "sshHost": "user@your-prod-host",
+  "sshHostkey": "ssh-ed25519 255 SHA256:... (plink -hostkey fingerprint of your prod host)",
+  "sshKey": "C:\\path\\to\\your-ssh-key.ppk",
+  "dbCommand": "cd ~/your_backend && ./venv/bin/python metrics_db.py 2>/dev/null | tail -1",
+  "ga4Property": "GA4 numeric property id (Admin → Property Settings), or empty to skip GA4",
+  "ga4SaPath": "C:\\path\\to\\ga4-service-account.json (GA4 Data API SA, added as Viewer on the property)",
+  "privRepo": "owner/your-board-private  (metrics.json holds sensitive business data → stored private, fetched by the board with the owner's token)"
+}
