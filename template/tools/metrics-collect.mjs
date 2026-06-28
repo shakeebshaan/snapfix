@@ -124,10 +124,35 @@ function pullHealth() {
 const A = (need) => ({ status: "awaiting", need });
 function num(v) { return (v === null || v === undefined) ? null : v; }
 
+// AI factual-accuracy eval (server-side LLM call). EXPENSIVE (8 LLM calls), so
+// run at most ONCE/DAY: reuse the previous metrics.json's aiEval if <20h old.
+const PRIV_EARLY = cfg("privRepo", process.env.QA_PRIV_REPO || "");
+function ghGetJson(path) {
+  try {
+    const r = JSON.parse(execFileSync("gh", ["api", `repos/${PRIV_EARLY}/contents/${path}`], { encoding: "utf8", timeout: 45000, maxBuffer: 16 << 20 }));
+    return JSON.parse(Buffer.from(r.content.replace(/\s/g, ""), "base64").toString("utf8"));
+  } catch { return null; }
+}
+function pullAiEval() {
+  if (!HOST || !HOSTKEY) return null;
+  try {
+    const out = execFileSync("plink", ["-batch", "-hostkey", HOSTKEY, "-i", KEY, HOST,
+      "cd ~/nyu_backend && ./venv/bin/python metrics_ai_eval.py 2>/dev/null | tail -1"],
+      { encoding: "utf8", timeout: 120000, maxBuffer: 8 << 20 });
+    return JSON.parse(out.trim().split("\n").pop());
+  } catch (e) { warn.push("aieval: " + String(e.message || e).slice(0, 100)); return null; }
+}
+
 const db = pullDb();
 const ga4 = await pullGa4();
 const health = pullHealth();
 const vuln = pullVuln();
+let aiEval = null;
+{
+  const prev = (ghGetJson("data/metrics.json") || {}).aiEval;
+  if (prev && prev.at && (Date.now() - Date.parse(prev.at) < 20 * 3600 * 1000)) aiEval = prev; // reuse (<20h)
+  else { const e = pullAiEval(); aiEval = e ? { accuracy_pct: e.accuracy_pct, hallucination_pct: e.hallucination_pct, total: e.total, at: new Date().toISOString().replace(/\.\d+Z$/, "Z") } : (prev || null); }
+}
 
 const m = (key, label, value, opt = {}) => ({ key, label, value: value === undefined ? null : value,
   status: (value && value.status === "awaiting") ? "awaiting" : (value === null || value === undefined ? "nodata" : "live"),
@@ -187,7 +212,8 @@ const categories = [
     m("ai_tokens_30d", "Tokens (30d)", num(ai.tokens_30d), { source: "DB", owner: "AI", priority: "M" }),
     m("ai_safety", "Safety-flagged responses (30d)", num(ai.safety_flagged_30d), { source: "DB content_safety_flagged", owner: "AI", priority: "M" }),
     m("ai_injection", "Prompt-injections detected (30d)", num(ai.injection_detected_30d), { source: "DB injection_detected", owner: "Security", priority: "M" }),
-    m("ai_hallucination", "Hallucination / factual-accuracy rate", A("An eval harness scoring AI answers vs ground truth (BMR/nutrition facts) — not derivable from logs"), { owner: "AI/DS", priority: "H" }),
+    m("ai_accuracy", "AI factual accuracy", aiEval ? aiEval.accuracy_pct : A("eval harness"), { unit: aiEval ? `% (${aiEval.total}-Q daily eval)` : "", formula: "correct ÷ total on a fixed health-fact set (BMR/macros/nutrition)", source: "metrics_ai_eval.py (live LLM)", owner: "AI/DS", priority: "H" }),
+    m("ai_hallucination", "AI hallucination rate", aiEval ? aiEval.hallucination_pct : A("An eval harness scoring AI answers vs computed ground truth"), { unit: aiEval ? "%" : "", formula: "wrong ÷ total on the fixed eval set", source: "metrics_ai_eval.py (live LLM)", owner: "AI/DS", priority: "H" }),
   ]},
   { key: "marketing_seo", title: "Marketing, SEO & AEO", metrics: [
     m("organic_30d", "Organic search sessions (30d)", ga4 ? ga4.organic_30d : null, { source: "GA4 channel", owner: "SEO", priority: "H" }),
@@ -267,6 +293,7 @@ const metrics = {
   summary: { total, live: liveCount, awaiting: awaitingCount, nodata: total - liveCount - awaitingCount },
   sources: { db: !!db.users_total, ga4: !!ga4, health: !!health.service },
   warnings: warn,
+  aiEval,
   detail: { funnel: fn, ai_by_model: ai.by_model || {}, ga4_channels: ga4 ? ga4.channels : {}, ga4_top_pages: ga4 ? ga4.topPages : {}, top_pages_db: web.top_pages_30d || {}, retention: { d1: db.retention_d1, d7: db.retention_d7, d30: db.retention_d30 }, sub_by_currency: sub.mrr_by_currency || {} },
   categories,
 };
@@ -303,7 +330,8 @@ function appendHistory() {
     organic: ga4 ? ga4.organic_30d : null, aeo: ga4 ? ga4.aeo_ai_assistant_30d : null,
     web_sessions: ga4 ? ga4.sessions_30d : null,
     workouts_7d: db.workouts_completed_7d ?? null, meals_7d: db.meals_logged_7d ?? null,
-    vuln_high: vuln ? (vuln.high + vuln.critical) : null, errors_today: health.errors_today ?? null };
+    vuln_high: vuln ? (vuln.high + vuln.critical) : null, errors_today: health.errors_today ?? null,
+    ai_accuracy: aiEval ? aiEval.accuracy_pct : null };
   let hist = [];
   try { hist = JSON.parse(b64FromGh(ghJson(["api", `repos/${PRIV}/contents/data/metrics-history.json`]))); } catch {}
   if (!Array.isArray(hist)) hist = [];
