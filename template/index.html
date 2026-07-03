@@ -792,12 +792,14 @@ async function fetchPrivReport(path) {
   if (privReportCache.has(path)) return privReportCache.get(path);
   if (!token) return null; // not cached — so it retries once a token is added
   try {
+    // Raw media type: the JSON contents API returns EMPTY content for files
+    // >1MB (encoding:"none"), which made big reports render blank. Raw serves
+    // the bytes directly for files up to 100MB, same token auth.
     const r = await fetch(`${PRIV_API}/contents/${path}?ref=${PRIV_BRANCH}`, {
-      headers: headers(), cache: "no-store",
+      headers: headers({ Accept: "application/vnd.github.raw+json" }), cache: "no-store",
     });
     if (!r.ok) { privReportCache.set(path, null); return null; }
-    const j = await r.json();
-    const html = b64decodeUtf8(j.content);
+    const html = await r.text();
     privReportCache.set(path, html);
     return html;
   } catch {
@@ -1464,21 +1466,43 @@ function renderMetrics(d, hist) {
   const s = d.summary || {}, det = d.detail || {};
   const srcs = Object.entries(d.sources || {}).filter(([, v]) => v).map(([k]) => k).join(", ") || "none";
   const findVal = (ck, mk) => { const c = (d.categories || []).find(c => c.key === ck); const m = c && c.metrics.find(x => x.key === mk); return m && m.status === "live" ? m.value : null; };
+  // Day-over-day: compare against the most recent history snapshot BEFORE today.
+  const today = (d.generatedAt || "").slice(0, 10);
+  const prevSnap = [...hist].reverse().find(h => h.date && h.date < today) || null;
+  const prevOf = (key) => {
+    if (!prevSnap) return null;
+    if (typeof prevSnap[key] === "number") return prevSnap[key];
+    // Newer snapshots store all scalar metrics in an `all` map for quick lookup.
+    const all = prevSnap.all || {};
+    if (typeof all[key] === "number") return all[key];
+    // Fallback: try the leaf key (e.g. "product_growth.users_total" → "users_total").
+    const leaf = key.includes(".") ? key.split(".").pop() : null;
+    return leaf && typeof prevSnap[leaf] === "number" ? prevSnap[leaf] : null;
+  };
+  const deltaChip = (key, value, cls) => {
+    const pv = prevOf(key);
+    if (pv == null || typeof value !== "number") return "";
+    const dv = +(value - pv).toFixed(2);
+    if (!dv) return `<span class="${cls} flat" title="no change since yesterday">＝</span>`;
+    return `<span class="${cls} ${dv > 0 ? "up" : "dn"}" title="vs yesterday">${dv > 0 ? "▲" : "▼"} ${Math.abs(dv)}</span>`;
+  };
   const hero = (accent, label, value, unit, key) => {
     const series = ser(key).filter(v => typeof v === "number");
-    let delta = "";
-    if (series.length > 1 && typeof value === "number") { const dv = +(value - series[0]).toFixed(2); if (dv) delta = `<span class="hd ${dv > 0 ? "up" : "dn"}">${dv > 0 ? "▲" : "▼"} ${Math.abs(dv)}</span>`; }
+    const delta = deltaChip(key, value, "hd");
     return `<div class="m-hero" style="--ha:${accent}"><div class="mh-top"><span class="mh-l">${esc(label)}</span>${delta}</div><div class="mh-v">${unit === "$" ? esc(unit) : ""}${value == null ? "–" : esc(String(value))}${unit && unit !== "$" ? `<span class="mh-u">${esc(unit)}</span>` : ""}</div>${svgSpark(series, accent)}</div>`;
   };
   let html = `<div class="m-head"><div class="m-pills"><span class="mp live">${s.live ?? "–"} live</span><span class="mp awa">${s.awaiting ?? "–"} awaiting</span><span class="mp">${s.total ?? "–"} tracked</span></div><div class="m-meta">Real data · ${fmtDate(d.generatedAt)} · ${esc(srcs)} · ${d.periodDays || 30}d window${hist.length ? ` · ${hist.length}d history` : ""}</div></div>`;
   html += `<div class="m-heroes">`
     + hero(CPAL[0], "Total users", findVal("product_growth", "users_total"), "", "users_total")
     + hero(CPAL[4], "Monthly active", findVal("product_growth", "mau"), "", "mau")
-    + hero(CPAL[1], "Active subs", findVal("finance", "active_subs"), "", "active_subs")
+    + hero(CPAL[1], "Active (incl. trial)", findVal("finance", "active_subs"), "", "active_subs")
+    + hero(CPAL[5] || CPAL[3], "Paid subscribers", findVal("finance", "paid_subs"), "", "paid_subs")
     + hero(CPAL[2], "AI cost 30d", findVal("ai", "ai_cost_30d"), "$", "ai_cost")
     + `</div>`;
   const charts = [];
-  if (det.funnel && det.funnel.signups != null) charts.push(`<div class="m-chart"><h4>Acquisition funnel</h4>${chartFunnel([{ label: "Signups", value: det.funnel.signups }, { label: "Verified", value: det.funnel.verified }, { label: "Onboarded", value: det.funnel.onboarded }, { label: "Subscribed", value: det.funnel.subscribed }])}</div>`);
+  // Live funnel (test accounts excluded) — rendered first when available.
+  if (det.funnel && det.funnel.live && det.funnel.live.signups != null) charts.push(`<div class="m-chart"><h4>Acquisition funnel — LIVE (test accounts excluded)</h4>${chartFunnel([{ label: "Signups", value: det.funnel.live.signups }, { label: "Verified", value: det.funnel.live.verified }, { label: "Onboarded", value: det.funnel.live.onboarded }, { label: "Paid", value: det.funnel.live.subscribed_paid }]) || `<div class="rv-state" style="padding:12px">0 live users yet — everything on record is a test account</div>`}</div>`);
+  if (det.funnel && det.funnel.signups != null) charts.push(`<div class="m-chart"><h4>${det.funnel.live ? "All accounts (incl. test users & trials)" : "Acquisition funnel"}</h4>${chartFunnel([{ label: "Signups", value: det.funnel.signups }, { label: "Verified", value: det.funnel.verified }, { label: "Onboarded", value: det.funnel.onboarded }, { label: "Subscribed", value: det.funnel.subscribed }])}</div>`);
   if (det.retention) { const r = det.retention, rb = [["D1", r.d1], ["D7", r.d7], ["D30", r.d30]].filter(x => x[1]).map(x => ({ label: x[0], value: x[1].pct, unit: "%" })); if (rb.length) charts.push(`<div class="m-chart"><h4>Retention by cohort</h4>${chartBars(rb, CPAL[1])}</div>`); }
   if (det.ga4_channels && Object.keys(det.ga4_channels).length) { const segs = Object.entries(det.ga4_channels).map(([k, v]) => ({ label: k, value: v })).sort((a, b) => b.value - a.value).slice(0, 6); charts.push(`<div class="m-chart"><h4>Web acquisition channels</h4>${chartDonut(segs)}</div>`); }
   if (det.ai_by_model && Object.keys(det.ai_by_model).length) { const segs = Object.entries(det.ai_by_model).map(([k, v]) => ({ label: k.slice(0, 20), value: v.calls })).sort((a, b) => b.value - a.value).slice(0, 5); charts.push(`<div class="m-chart"><h4>AI calls by model (30d)</h4>${chartBars(segs, CPAL[1])}</div>`); }
