@@ -227,8 +227,22 @@
     font-size: 12px; font-weight: 600; color: var(--muted);
     background: var(--bg); border: 1px solid var(--line);
     padding: 2px 8px; border-radius: 999px; font-family: ui-monospace, monospace;
+    max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    display: inline-block; vertical-align: middle;
   }
-  .iid { margin-left: auto; font-size: 11px; color: hsl(200 10% 70%); font-family: ui-monospace, monospace; }
+  .iid { margin-left: auto; font-size: 11px; color: hsl(200 10% 70%); font-family: ui-monospace, monospace; cursor: pointer; }
+  .iid:hover { color: var(--accent-ink); text-decoration: underline; }
+  /* Live search input */
+  .search-wrap { margin: 10px 0 0; position: relative; }
+  .search-wrap input[type="search"] {
+    width: 100%; padding: 9px 36px 9px 13px; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--card); font: inherit; font-size: 14px; color: var(--ink); outline: none;
+    -webkit-appearance: none;
+  }
+  .search-wrap input[type="search"]:focus { border-color: var(--accent); background: #fff; }
+  .search-wrap .search-icon { position: absolute; right: 11px; top: 50%; transform: translateY(-50%); font-size: 15px; color: var(--muted); pointer-events: none; }
+  .search-empty { text-align: center; color: var(--muted); padding: 40px 20px; font-size: 14px; }
+  body.tab-metrics .search-wrap { display: none; }
   .sides { display: grid; grid-template-columns: 1fr; }
   @media (min-width: 720px) {
     .sides { grid-template-columns: 1fr 1fr; }
@@ -246,8 +260,16 @@
     background: hsl(40 20% 94%); border: 1px solid var(--line);
     display: grid; place-items: center; overflow: hidden; cursor: zoom-in; padding: 0;
   }
+  .no-shot {
+    display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px;
+    border-radius: 20px; border: 1px solid var(--line);
+    background: hsl(40 15% 96%); color: var(--muted); font-size: 11.5px; font-weight: 500;
+    margin-bottom: 10px;
+  }
   .shot img { width: 100%; height: 100%; object-fit: contain; display: block; }
   .desc { margin: 10px 2px 0; font-size: 14.5px; white-space: pre-wrap; word-break: break-word; }
+  /* Text-only issues: description is the hero — give it extra visual weight */
+  .no-shot + .desc, .no-shot + p.desc { font-size: 15.5px; line-height: 1.6; margin-top: 0; }
   /* 831e: structured description — step list + option radios */
   .desc-steps { margin: 8px 2px 0; padding-left: 22px; font-size: 13.5px; line-height: 1.5; color: var(--ink); }
   .desc-steps li { margin: 6px 0; padding-left: 3px; }
@@ -508,6 +530,10 @@
     </form>
   </section>
 
+  <div class="search-wrap" role="search">
+    <input type="search" id="search" placeholder="Search issues…" autocomplete="off" autocapitalize="off" aria-label="Search issues by ID or description" />
+    <span class="search-icon" aria-hidden="true">⌕</span>
+  </div>
   <div id="tagbar" role="group" aria-label="Filter by tag"></div>
   <main id="list" aria-live="polite"></main>
 
@@ -929,10 +955,13 @@ function shotHtml(path, commit, alt, isPrivate) {
 }
 function shotsHtml(paths, commits, altBase, isPrivate) {
   if (!paths || paths.length === 0) return "";
+  paths = paths.filter(Boolean); // guard: null/undefined paths → broken image
+  if (paths.length === 0) return "";
   if (paths.length === 1) return shotHtml(paths[0], commits?.[0], altBase, isPrivate);
   return `<div class="shots-grid">${paths.map((p, i) => shotHtml(p, commits?.[i] ?? commits?.[0], `${altBase} ${i + 1}`, isPrivate)).join("")}</div>`;
 }
 let activeTag = null;  // current tag filter (null = all)
+let searchQuery = "";  // live text search
 
 /* Tags for an issue: explicit `tags` if set, else keyword-derived from the
    route + description so the filter is useful even before issues are tagged. */
@@ -1019,12 +1048,12 @@ function cardHtml(it, archived) {
       ${badge}
       ${it.route ? `<span class="route-pill">${esc(it.route)}</span>` : ""}
       <span class="meta">${archived ? "resolved " + fmtDate(it.archivedAt) : fmtDate(it.createdAt)}</span>
-      <span class="iid">${esc(it.id)}</span>
+      <span class="iid" title="Click to copy ID" role="button" tabindex="0">${esc(it.id)}</span>
     </div>
     <div class="sides">
       <div class="side">
         <h3>Issue</h3>
-        ${shotsHtml(it.imagePaths || [it.imagePath], it.imageCommits || [it.imageCommit], "issue screenshot", it.imagePrivate)}
+        ${shotsHtml(it.imagePaths || [it.imagePath], it.imageCommits || [it.imageCommit], "issue screenshot", it.imagePrivate) || `<div class="no-shot">📝 Text only — no screenshot</div>`}
         ${formatDesc(it.description, it.id)}
         ${it.reportPath
           ? `<button type="button" class="report-cta" data-report-path="${esc(it.reportPath)}" data-report-label="${esc(it.reportLabel || "Open report")}">📄 ${esc(it.reportLabel || "Open report")} <span class="arr">&rarr;</span></button>`
@@ -1063,11 +1092,21 @@ function render() {
   $("chip-open").textContent = review ? `${open} to fix · ${review} review` : `${open} to fix`;
   $("chip-fixed").textContent = `${inReview} in review`;
   renderTagbar(sorted);
-  const visible = activeTag ? sorted.filter((it) => tagsFor(it).includes(activeTag)) : sorted;
+  let visible = activeTag ? sorted.filter((it) => tagsFor(it).includes(activeTag)) : sorted;
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    visible = visible.filter((it) =>
+      it.id.toLowerCase().includes(q) ||
+      (it.description || "").toLowerCase().includes(q) ||
+      (it.route || "").toLowerCase().includes(q)
+    );
+  }
   $("list").innerHTML = visible.length
     ? visible.map((it) => cardHtml(it)).join("")
     : all.length
-      ? `<div class="empty"><b>No issues with "${esc(activeTag)}"</b>Clear the filter to see all.</div>`
+      ? searchQuery
+        ? `<div class="search-empty">No issues match "<b>${esc(searchQuery)}</b>"</div>`
+        : `<div class="empty"><b>No issues with "${esc(activeTag)}"</b>Clear the filter to see all.</div>`
       : `<div class="empty"><b>No issues yet</b>File the first one above — it shows up here with an "awaiting fix" slot.</div>`;
   resolvePrivImages();
 }
@@ -1203,6 +1242,14 @@ $("clear-all").addEventListener("click", () => {
 });
 
 $("desc").addEventListener("input", updateSubmit);
+
+$("search").addEventListener("input", () => {
+  searchQuery = $("search").value.trim();
+  render();
+});
+$("search").addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape") { $("search").value = ""; searchQuery = ""; render(); }
+});
 
 $("form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
@@ -1373,6 +1420,18 @@ $("loop-save").addEventListener("click", async (ev) => {
     toast(e.message || "Couldn't save loop settings.", 4200);
   } finally {
     btn.disabled = false;
+  }
+});
+
+/* ── click-to-copy issue ID ───────────────────────────── */
+document.addEventListener("click", (ev) => {
+  const iid = ev.target.closest(".iid");
+  if (iid) {
+    const text = iid.textContent.trim();
+    if (text) {
+      navigator.clipboard.writeText(text).then(() => toast("Copied: " + text)).catch(() => toast(text));
+    }
+    return;
   }
 });
 

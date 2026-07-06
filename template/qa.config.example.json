@@ -2,7 +2,7 @@
   "_comment": "snapfix config. Copy to qa.config.json (the CLI writes it for you during `snapfix init`). JSON has no comments, so each section carries a `_comment` describing its keys. Full docs: README.md > Configuration. Local-only overrides go in qa.config.local.json (gitignored).",
 
   "board": {
-    "_comment": "The two GitHub repos that back the board. `repo` is the PUBLIC repo (GitHub Pages + issue metadata, no images). `private` is the PRIVATE repo that holds screenshots only — never served, token-gated. `branch` is the branch both repos publish from (Pages source).",
+    "_comment": "The two GitHub repos that back the board. `repo` is the PUBLIC repo (GitHub Pages + issue metadata, no PII). `private` is the PRIVATE repo that holds screenshots, descriptions, and reports — never served publicly; always token-gated. `branch` is the branch both repos publish from (Pages source).",
     "owner": "your-github-username",
     "repo": "myapp-qa",
     "private": "myapp-qa-private",
@@ -10,11 +10,17 @@
   },
 
   "app": {
-    "_comment": "Your actual application — the code the fix-issues skill edits and recaptures. `repo` is the path to the app repo relative to THIS config file (`.` in the copy that lives at your app root, which is where the skill runs). `devServer` is the local URL the recapture script hits. `viewport` is WIDTHxHEIGHT in CSS px (390x844 = iPhone-sized). `framework` is a hint for the skill (vite | next | cra | astro | other).",
+    "_comment": "Your actual application — the code the fix-issues skill edits and recaptures. `repo` is the path to the app repo relative to THIS config file (`.` in the copy that lives at your app root, which is where the skill runs). `devServer` is the local URL the recapture script hits. `viewport` is WIDTHxHEIGHT in CSS px (390x844 = iPhone-sized). `framework` is a hint for the skill (vite | next | cra | astro | other). `theme` (optional) maps your app's design tokens onto the board's CSS variables so the board looks on-brand.",
     "repo": ".",
     "devServer": "http://localhost:5173",
     "viewport": "390x844",
-    "framework": "vite"
+    "framework": "vite",
+    "theme": {
+      "_comment": "Optional: map your app's fonts/colors onto the board. Set by `snapfix init --auto`. Omit to keep the default board theme.",
+      "fontFamily": "\"DM Sans\", system-ui, -apple-system, sans-serif",
+      "googleFontHref": "https://fonts.googleapis.com/css2?family=DM+Sans&display=swap",
+      "source": "src/index.css"
+    }
   },
 
   "reproduce": {
@@ -24,14 +30,31 @@
   },
 
   "auth": {
-    "_comment": "How the recapture script reaches authenticated routes. `strategy`: \"none\" = routes are public, no login. \"seeded-jwt\" = a JWT is injected into localStorage[tokenKey] before navigating. \"manual-otp\" = the skill drives the login form and asks the human for the OTP code. `tokenKey` is the localStorage key the app reads the token from. `loginUrl` is the route the login flow starts at.",
+    "_comment": "How the recapture script reaches authenticated routes. `strategy`: \"none\" = routes are public, no login. \"seeded-jwt\" = a JWT is injected into localStorage[tokenKey] before navigating (store creds in .qa-report/_qa_creds.json). \"manual-otp\" = the skill drives the login form and asks the human for the OTP code. `tokenKey` is the localStorage key the app reads the token from. `loginUrl` is the route the login flow starts at.",
     "strategy": "none",
     "tokenKey": "access_token",
     "loginUrl": "/"
   },
 
+  "privacy": {
+    "_comment": "Privacy controls. `privateDescriptions`: when true (default on new boards), issue descriptions are stored in the PRIVATE repo so they're not publicly readable on GitHub Pages. The agent (qa.mjs pull) fetches them via the gh CLI. `privateImages`: images are always stored in the private repo and never committed to the public repo.",
+    "privateDescriptions": true,
+    "privateImages": true
+  },
+
+  "reports": {
+    "_comment": "Inline HTML reports — daily-ops summaries, analysis docs, research. Reports are stored in the PRIVATE repo so they're not publicly reachable. `qa.mjs report <id> --file <absHtmlPath> --label \"<label>\"` attaches a report to an issue; the board renders it inline on click (sandboxed iframe, bare sandbox, no scripts). Self-contained HTML + inline CSS only (no external resources).",
+    "reportsDir": "reports/"
+  },
+
+  "metrics": {
+    "_comment": "Real-data KPI dashboard (Metrics tab on the board). Collector script writes to data/metrics.json in the PRIVATE repo; board renders it token-gated. Optional feature — omit if not using it.",
+    "collectorScript": "scripts/metrics-collector.mjs",
+    "schedule": "0 * * * *"
+  },
+
   "loop": {
-    "_comment": "The fix-issues loop = trigger + goal (see LOOP.md). `trigger`: manual | schedule | action — how the loop is kicked. `schedule.cron` is the cadence and `schedule.agentCmd` is the agent invocation tools/loop.mjs shells out to (bring-your-own-agent; no cloud). `action.on`/`pollSeconds` configure the event watcher. `goal.satisfaction` is the LLM-as-judge bar (0-100) a fix must clear to post — the board's satisfaction slider overrides it live via data/loop.json. `goal.tests` is the verifiable gate: `required` enforces it, `command` is the app's test command, `coverage` is the minimum %% (0 disables the coverage check).",
+    "_comment": "The fix-issues loop = trigger + goal (see LOOP.md). `trigger`: manual | schedule | action — how the loop is kicked. `schedule.cron` is the cadence and `schedule.agentCmd` is the agent invocation tools/loop.mjs shells out to (bring-your-own-agent; no cloud). `action.on`/`pollSeconds` configure the event watcher. `goal.satisfaction` is the LLM-as-judge bar (0-100) a fix must clear to post — the board's satisfaction slider overrides it live via data/loop.json. `goal.tests` is the verifiable gate: `required` enforces it, `command` is the app's test command, `coverage` is the minimum %% (0 disables the coverage check). `goal.testCommand` overrides `goal.tests.command` at the data/loop.json level (set from the board UI).",
     "trigger": "manual",
     "schedule": { "cron": "0 9 * * *", "agentCmd": "claude -p \"/fix-issues\"" },
     "action": { "on": "new-issue", "pollSeconds": 60 },
